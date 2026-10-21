@@ -1,24 +1,44 @@
 import ctypes
 from collections.abc import Sequence
-from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QCursor, QGuiApplication, QKeySequence, QPalette, QShortcut
-from PySide6.QtWidgets import QFrame, QLineEdit, QVBoxLayout, QWidget
+from PySide6.QtCore import QEvent, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import (
+    QColor,
+    QCursor,
+    QGuiApplication,
+    QKeySequence,
+    QPalette,
+    QShortcut,
+)
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QFrame,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
+
+from desktop_launcher.core.search import AppEntry, filter_entries
+
+WINDOW_WIDTH = 720
+SEARCH_HEIGHT = 44
+ROW_HEIGHT = 38
+MAX_VISIBLE_ROWS = 8
+STATUS_HEIGHT = 26
 
 
 class LauncherWindow(QWidget):
-    queryChanged = Signal(str)
-    querySubmitted = Signal(str)
+    entryActivated = Signal(object)
 
-    def __init__(
-        self,
-        search_paths: Sequence[Path] = (),
-        max_depth: int = 5,
-    ) -> None:
+    def __init__(self) -> None:
         super().__init__()
-        self.search_paths = tuple(search_paths)
-        self.search_max_depth = max_depth
+        self._entries: tuple[AppEntry, ...] = ()
+        self._scanning = False
+        self._error = ""
+
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
@@ -26,34 +46,65 @@ class LauncherWindow(QWidget):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setWindowTitle("Desktop Launcher")
-        self.setFixedSize(720, 76)
+        self.setFixedWidth(WINDOW_WIDTH)
 
-        card = QFrame(self)
-        card.setObjectName("card")
+        self._card = QFrame(self)
+        self._card.setObjectName("card")
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
-        outer.addWidget(card)
+        outer.addWidget(self._card)
 
-        inner = QVBoxLayout(card)
-        inner.setContentsMargins(20, 12, 20, 12)
+        inner = QVBoxLayout(self._card)
+        inner.setContentsMargins(16, 12, 16, 12)
+        inner.setSpacing(4)
+        self._inner_layout = inner
 
-        self.search_input = QLineEdit(card)
+        self.search_input = QLineEdit(self._card)
         self.search_input.setObjectName("searchInput")
         self.search_input.setPlaceholderText("搜索应用…")
         self.search_input.setClearButtonEnabled(True)
-        self.search_input.textChanged.connect(self.queryChanged)
-        self.search_input.returnPressed.connect(self._submit)
+        self.search_input.setFixedHeight(SEARCH_HEIGHT)
+        self.search_input.textChanged.connect(self._apply_filter)
+        self.search_input.returnPressed.connect(self._activate_current)
+        self.search_input.installEventFilter(self)
         inner.addWidget(self.search_input)
 
         palette = self.search_input.palette()
         palette.setColor(QPalette.ColorRole.PlaceholderText, QColor(255, 255, 255, 110))
         self.search_input.setPalette(palette)
 
+        self._status_label = QLabel(self._card)
+        self._status_label.setObjectName("statusLabel")
+        self._status_label.setFixedHeight(STATUS_HEIGHT)
+        self._status_label.setAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        )
+        self._status_label.hide()
+        inner.addWidget(self._status_label)
+
+        self._result_list = QListWidget(self._card)
+        self._result_list.setObjectName("resultList")
+        self._result_list.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._result_list.setSelectionMode(
+            QAbstractItemView.SelectionMode.SingleSelection
+        )
+        self._result_list.setUniformItemSizes(True)
+        self._result_list.setMouseTracking(True)
+        self._result_list.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self._result_list.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
+        self._result_list.itemDoubleClicked.connect(self._on_item_double_clicked)
+        self._result_list.hide()
+        inner.addWidget(self._result_list)
+
         self.setStyleSheet(
             """
             #card {
-                background-color: rgba(32, 32, 36, 235);
+                background-color: rgba(32, 32, 36, 240);
                 border: 1px solid rgba(255, 255, 255, 40);
                 border-radius: 16px;
             }
@@ -62,12 +113,53 @@ class LauncherWindow(QWidget):
                 border: none;
                 color: #f2f2f2;
                 font-size: 18px;
-                padding: 6px 4px;
+                padding: 4px 2px;
                 selection-background-color: #3d7eff;
             }
             #searchInput QToolButton {
                 background: transparent;
                 border: none;
+            }
+            #statusLabel {
+                color: rgba(255, 255, 255, 150);
+                font-size: 13px;
+                padding-left: 4px;
+            }
+            #resultList {
+                background: transparent;
+                border: none;
+                outline: none;
+                color: #f2f2f2;
+                font-size: 15px;
+            }
+            #resultList::item {
+                border-radius: 8px;
+                padding-left: 10px;
+            }
+            #resultList::item:hover {
+                background-color: rgba(255, 255, 255, 20);
+            }
+            #resultList::item:selected {
+                background-color: #3d7eff;
+                color: #ffffff;
+            }
+            QScrollBar:vertical {
+                background: transparent;
+                width: 8px;
+                margin: 0;
+            }
+            QScrollBar::handle:vertical {
+                background: rgba(255, 255, 255, 50);
+                border-radius: 4px;
+                min-height: 20px;
+            }
+            QScrollBar::add-line:vertical,
+            QScrollBar::sub-line:vertical {
+                height: 0;
+            }
+            QScrollBar::add-page:vertical,
+            QScrollBar::sub-page:vertical {
+                background: transparent;
             }
             """
         )
@@ -76,10 +168,122 @@ class LauncherWindow(QWidget):
         self._escape_shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
         self._escape_shortcut.activated.connect(self.hide_launcher)
 
-    def _submit(self) -> None:
-        self.querySubmitted.emit(self.search_input.text())
+        self._apply_filter()
 
-    def _center_on_cursor_screen(self) -> None:
+    def set_entries(self, entries: Sequence[AppEntry]) -> None:
+        self._entries = tuple(entries)
+        self._scanning = False
+        self._error = ""
+        self._apply_filter()
+
+    def set_scanning(self, scanning: bool) -> None:
+        self._scanning = scanning
+        if scanning:
+            self._error = ""
+            if not self._entries:
+                self._apply_filter()
+            return
+        self._apply_filter()
+
+    def set_error(self, message: str) -> None:
+        self._scanning = False
+        self._error = message
+        self._apply_filter()
+
+    def eventFilter(self, watched, event) -> bool:
+        if watched is self.search_input and event.type() == QEvent.Type.KeyPress:
+            if event.key() == Qt.Key.Key_Down:
+                self._move_selection(1)
+                return True
+            if event.key() == Qt.Key.Key_Up:
+                self._move_selection(-1)
+                return True
+        return super().eventFilter(watched, event)
+
+    def _move_selection(self, delta: int) -> None:
+        count = self._result_list.count()
+        if count == 0:
+            return
+
+        current = self._result_list.currentRow()
+        if current < 0:
+            target = 0 if delta > 0 else count - 1
+        else:
+            target = max(0, min(current + delta, count - 1))
+        self._result_list.setCurrentRow(target)
+        item = self._result_list.item(target)
+        if item is not None:
+            self._result_list.scrollToItem(item)
+
+    def _activate_current(self) -> None:
+        item = self._result_list.currentItem()
+        if item is not None:
+            self._emit_entry(item)
+
+    def _on_item_double_clicked(self, item: QListWidgetItem) -> None:
+        self._emit_entry(item)
+
+    def _emit_entry(self, item: QListWidgetItem) -> None:
+        entry = item.data(Qt.ItemDataRole.UserRole)
+        if isinstance(entry, AppEntry):
+            self.entryActivated.emit(entry)
+
+    def _apply_filter(self) -> None:
+        filtered = filter_entries(self._entries, self.search_input.text())
+        self._result_list.clear()
+
+        for entry in filtered:
+            item = QListWidgetItem(entry.name)
+            item.setData(Qt.ItemDataRole.UserRole, entry)
+            item.setToolTip(str(entry.path))
+            item.setSizeHint(QSize(0, ROW_HEIGHT))
+            self._result_list.addItem(item)
+
+        if filtered:
+            self._result_list.setCurrentRow(0)
+            self._result_list.setFixedHeight(
+                min(len(filtered), MAX_VISIBLE_ROWS) * ROW_HEIGHT
+            )
+            self._status_label.hide()
+            self._result_list.show()
+        else:
+            self._result_list.setFixedHeight(0)
+            self._result_list.hide()
+            self._status_label.setText(self._empty_message())
+            self._status_label.show()
+
+        self._resize_to_results()
+
+    def _empty_message(self) -> str:
+        if self._error:
+            return "扫描快捷方式失败"
+        if self._scanning:
+            return "正在扫描快捷方式…"
+        if self.search_input.text().strip():
+            return "无匹配结果"
+        return "未找到 .lnk 快捷方式，请检查搜索路径"
+
+    def _resize_to_results(self) -> None:
+        rows = self._result_list.count()
+        content_height = self.search_input.height()
+        if rows:
+            content_height += (
+                self._inner_layout.spacing() + min(rows, MAX_VISIBLE_ROWS) * ROW_HEIGHT
+            )
+        else:
+            content_height += self._inner_layout.spacing() + STATUS_HEIGHT
+
+        margins = self._inner_layout.contentsMargins()
+        target_height = (
+            margins.top()
+            + margins.bottom()
+            + content_height
+            + self._card.frameWidth() * 2
+        )
+        if self.height() != target_height:
+            self.setFixedHeight(target_height)
+
+    def _position_on_cursor_screen(self) -> None:
         screen = QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
         if screen is None:
             return
@@ -125,7 +329,9 @@ class LauncherWindow(QWidget):
             pass
 
     def show_and_focus(self) -> None:
-        self._center_on_cursor_screen()
+        if not self.isVisible():
+            self._apply_filter()
+            self._position_on_cursor_screen()
         self.show()
         self.raise_()
         self.activateWindow()
@@ -141,8 +347,8 @@ class LauncherWindow(QWidget):
         self.search_input.selectAll()
 
     def hide_launcher(self) -> None:
-        self.search_input.clear()
         self.hide()
+        self.search_input.clear()
 
     def closeEvent(self, event) -> None:
         event.ignore()
