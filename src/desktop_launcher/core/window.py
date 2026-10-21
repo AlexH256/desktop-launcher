@@ -1,5 +1,5 @@
 import ctypes
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 from PySide6.QtCore import QEvent, QModelIndex, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import (
@@ -70,6 +70,7 @@ class LauncherWindow(QWidget):
     def __init__(self) -> None:
         super().__init__()
         self._entries: tuple[AppEntry, ...] = ()
+        self._weights: dict[str, int] = {}
         self._scanning = False
         self._error = ""
 
@@ -217,6 +218,10 @@ class LauncherWindow(QWidget):
         self._error = ""
         self._apply_filter()
 
+    def set_weights(self, weights: Mapping[str, int]) -> None:
+        self._weights = dict(weights)
+        self._apply_filter()
+
     def set_scanning(self, scanning: bool) -> None:
         self._scanning = scanning
         if scanning:
@@ -270,7 +275,11 @@ class LauncherWindow(QWidget):
             self.entryActivated.emit(entry)
 
     def _apply_filter(self) -> None:
-        filtered = filter_entries(self._entries, self.search_input.text())
+        filtered = filter_entries(
+            self._entries,
+            self.search_input.text(),
+            self._weights,
+        )
         self._result_list.clear()
 
         for entry in filtered:

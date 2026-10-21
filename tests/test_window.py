@@ -7,6 +7,7 @@ from PySide6.QtWidgets import QStyleOptionViewItem
 
 from desktop_launcher.core.search import AppEntry
 from desktop_launcher.core.window import ICON_SIZE, LauncherWindow
+from desktop_launcher.core.weights import weight_key
 
 ENTRIES = (
     AppEntry("Alpha", Path("alpha.lnk")),
@@ -98,3 +99,30 @@ def test_items_show_icons(window) -> None:
     assert not option.icon.isNull()
     assert option.features & QStyleOptionViewItem.ViewItemFeature.HasDecoration
     assert option.decorationSize == QSize(ICON_SIZE, ICON_SIZE)
+
+
+def test_set_weights_reorders_items(window) -> None:
+    window.set_weights({weight_key(ENTRIES[2].path): 5})
+
+    names = [
+        window._result_list.item(index).text()
+        for index in range(window._result_list.count())
+    ]
+
+    assert names == ["Gamma", "Alpha", "Beta"]
+
+
+def test_equal_weights_sort_by_name(window) -> None:
+    window.set_weights(
+        {
+            weight_key(ENTRIES[0].path): 2,
+            weight_key(ENTRIES[1].path): 2,
+        }
+    )
+
+    names = [
+        window._result_list.item(index).text()
+        for index in range(window._result_list.count())
+    ]
+
+    assert names == ["Alpha", "Beta", "Gamma"]

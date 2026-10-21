@@ -1,11 +1,13 @@
 import os
 import time
 import unicodedata
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal
+
+from desktop_launcher.core.weights import weight_key
 
 REFRESH_THROTTLE_SECONDS = 10.0
 
@@ -52,13 +54,19 @@ def _match_rank(needle: str, haystack: str) -> int | None:
     return None
 
 
-def filter_entries(entries: Sequence[AppEntry], query: str) -> tuple[AppEntry, ...]:
+def filter_entries(
+    entries: Sequence[AppEntry],
+    query: str,
+    weights: Mapping[str, int] | None = None,
+) -> tuple[AppEntry, ...]:
+    weight_map = weights or {}
     needle = _compact(query)
     if not needle:
         return tuple(
             sorted(
                 entries,
                 key=lambda entry: (
+                    -weight_map.get(weight_key(entry.path), 0),
                     _compact(entry.name),
                     os.path.normcase(str(entry.path)),
                 ),
@@ -74,7 +82,7 @@ def filter_entries(entries: Sequence[AppEntry], query: str) -> tuple[AppEntry, .
         matches.append(
             (
                 rank,
-                len(haystack),
+                -weight_map.get(weight_key(entry.path), 0),
                 haystack,
                 os.path.normcase(str(entry.path)),
                 entry,

@@ -8,6 +8,7 @@ from desktop_launcher.core.search import (
     scan_links,
     subsequence_match,
 )
+from desktop_launcher.core.weights import weight_key
 
 
 @pytest.mark.parametrize(
@@ -95,6 +96,56 @@ def test_non_matching_entries_are_excluded() -> None:
     result = filter_entries(entries, "vsc")
 
     assert [entry.name for entry in result] == ["Visual Studio Code"]
+
+
+def test_empty_query_sorts_by_weight_then_name() -> None:
+    entries = (
+        AppEntry("Alpha", Path("alpha")),
+        AppEntry("Beta", Path("beta")),
+        AppEntry("Gamma", Path("gamma")),
+    )
+    weights = {
+        weight_key(Path("beta")): 5,
+        weight_key(Path("gamma")): 5,
+    }
+
+    result = filter_entries(entries, "", weights)
+
+    assert [entry.name for entry in result] == ["Beta", "Gamma", "Alpha"]
+
+
+def test_query_sorts_by_relevance_then_weight_then_name() -> None:
+    entries = (
+        AppEntry("Code", Path("exact")),
+        AppEntry("Code Editor", Path("prefix-a")),
+        AppEntry("Code Lite", Path("prefix-b")),
+        AppEntry("Coconut Delight", Path("subsequence")),
+    )
+    weights = {
+        weight_key(Path("prefix-a")): 10,
+        weight_key(Path("prefix-b")): 2,
+        weight_key(Path("subsequence")): 100,
+    }
+
+    result = filter_entries(entries, "code", weights)
+
+    assert [entry.name for entry in result] == [
+        "Code",
+        "Code Editor",
+        "Code Lite",
+        "Coconut Delight",
+    ]
+
+
+def test_query_same_relevance_and_weight_sorts_by_name() -> None:
+    entries = (
+        AppEntry("Code Beta", Path("beta")),
+        AppEntry("Code Alpha", Path("alpha")),
+    )
+
+    result = filter_entries(entries, "code")
+
+    assert [entry.name for entry in result] == ["Code Alpha", "Code Beta"]
 
 
 def touch(root: Path, relative: str) -> Path:
