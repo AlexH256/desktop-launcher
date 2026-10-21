@@ -1,55 +1,39 @@
-import unittest
+import pytest
 
 from desktop_launcher.core.hotkey import (
     MOD_ALT,
     MOD_CONTROL,
     MOD_SHIFT,
+    MOD_WIN,
+    HotkeyBinding,
     HotkeyParseError,
     parse_hotkey,
 )
 
 
-class ParseHotkeyTests(unittest.TestCase):
-    def test_alt_space(self) -> None:
-        binding = parse_hotkey("Alt+Space")
-        self.assertEqual(binding.text, "Alt+Space")
-        self.assertEqual(binding.modifiers, MOD_ALT)
-        self.assertEqual(binding.key, 0x20)
-
-    def test_case_and_spacing_are_normalized(self) -> None:
-        binding = parse_hotkey(" ctrl + shift + k ")
-        self.assertEqual(binding.text, "ctrl+shift+k")
-        self.assertEqual(binding.modifiers, MOD_CONTROL | MOD_SHIFT)
-        self.assertEqual(binding.key, ord("K"))
-
-    def test_function_key(self) -> None:
-        binding = parse_hotkey("Ctrl+F12")
-        self.assertEqual(binding.key, 0x7B)
-
-    def test_punctuation_key(self) -> None:
-        binding = parse_hotkey("Win+Slash")
-        self.assertEqual(binding.key, 0xBF)
-
-    def test_requires_modifier(self) -> None:
-        with self.assertRaises(HotkeyParseError):
-            parse_hotkey("Space")
-
-    def test_requires_single_key(self) -> None:
-        with self.assertRaises(HotkeyParseError):
-            parse_hotkey("Ctrl+A+B")
-
-    def test_unknown_key(self) -> None:
-        with self.assertRaises(HotkeyParseError):
-            parse_hotkey("Ctrl+Unknown")
-
-    def test_duplicate_modifier(self) -> None:
-        with self.assertRaises(HotkeyParseError):
-            parse_hotkey("Ctrl+Control+A")
-
-    def test_empty(self) -> None:
-        with self.assertRaises(HotkeyParseError):
-            parse_hotkey("   ")
+@pytest.mark.parametrize(
+    ("spec", "expected"),
+    [
+        ("Alt+Space", HotkeyBinding("Alt+Space", MOD_ALT, 0x20)),
+        (" ctrl + shift + k ", HotkeyBinding("ctrl+shift+k", MOD_CONTROL | MOD_SHIFT, ord("K"))),
+        ("Ctrl+F12", HotkeyBinding("Ctrl+F12", MOD_CONTROL, 0x7B)),
+        ("Win+Slash", HotkeyBinding("Win+Slash", MOD_WIN, 0xBF)),
+    ],
+)
+def test_parse_hotkey(spec: str, expected: HotkeyBinding) -> None:
+    assert parse_hotkey(spec) == expected
 
 
-if __name__ == "__main__":
-    unittest.main()
+@pytest.mark.parametrize(
+    "spec",
+    [
+        "Space",
+        "Ctrl+A+B",
+        "Ctrl+Unknown",
+        "Ctrl+Control+A",
+        "   ",
+    ],
+)
+def test_invalid_hotkey(spec: str) -> None:
+    with pytest.raises(HotkeyParseError):
+        parse_hotkey(spec)

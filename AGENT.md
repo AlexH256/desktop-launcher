@@ -4,6 +4,7 @@
 uv add <PACKAGES> #添加依赖
 uv run <FILE> #运行文件
 uv run python -m desktop_launcher #运行项目
+uv run pytest #运行测试
 ```
 
 \__main__.py 薄入口

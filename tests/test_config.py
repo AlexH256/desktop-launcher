@@ -1,6 +1,3 @@
-import os
-import tempfile
-import unittest
 from pathlib import Path
 
 from desktop_launcher.core.config import (
@@ -10,130 +7,144 @@ from desktop_launcher.core.config import (
 )
 
 
-class LoadConfigTests(unittest.TestCase):
-    def setUp(self) -> None:
-        temporary = tempfile.TemporaryDirectory()
-        self.addCleanup(temporary.cleanup)
-        self.base = Path(temporary.name)
-        self.config_path = self.base / "config.toml"
-
-    def write_config(self, text: str) -> None:
-        self.config_path.write_text(text, encoding="utf-8")
-
-    def test_creates_default_config(self) -> None:
-        result = load_config(self.config_path)
-
-        self.assertTrue(result.created)
-        self.assertTrue(self.config_path.exists())
-        self.assertEqual(result.config.hotkey.text, DEFAULT_HOTKEY)
-        self.assertEqual(result.config.search.max_depth, DEFAULT_MAX_DEPTH)
-        self.assertGreaterEqual(len(result.config.search.paths), 1)
-        self.assertEqual(result.warnings, ())
-
-    def test_loads_custom_values(self) -> None:
-        self.write_config(
-            'hotkey = "Ctrl+Shift+K"\n\n[search]\npaths = []\nmax_depth = 2\n'
-        )
-
-        result = load_config(self.config_path)
-
-        self.assertFalse(result.created)
-        self.assertEqual(result.config.hotkey.text, "Ctrl+Shift+K")
-        self.assertEqual(result.config.search.paths, ())
-        self.assertEqual(result.config.search.max_depth, 2)
-
-    def test_expands_relative_and_environment_paths(self) -> None:
-        apps_dir = self.base / "apps"
-        apps_dir.mkdir()
-        temp_dir = Path(os.environ["TEMP"]).resolve()
-        self.write_config(
-            'hotkey = "Alt+Space"\n'
-            "[search]\n"
-            'paths = ["apps", "%TEMP%", "apps"]\n'
-            "max_depth = 3\n"
-        )
-
-        result = load_config(self.config_path)
-
-        self.assertEqual(
-            result.config.search.paths,
-            (apps_dir.resolve(), temp_dir),
-        )
-
-    def test_warns_about_missing_path(self) -> None:
-        missing = self.base / "missing"
-        self.write_config(
-            'hotkey = "Alt+Space"\n'
-            "[search]\n"
-            f'paths = ["{missing.as_posix()}"]\n'
-        )
-
-        result = load_config(self.config_path)
-
-        self.assertEqual(result.config.search.paths, (missing.resolve(),))
-        self.assertTrue(any("不存在" in warning for warning in result.warnings))
-
-    def test_invalid_toml_falls_back_without_overwriting(self) -> None:
-        original = "hotkey = ["
-        self.write_config(original)
-
-        result = load_config(self.config_path)
-
-        self.assertEqual(result.config.hotkey.text, DEFAULT_HOTKEY)
-        self.assertTrue(result.warnings)
-        self.assertEqual(self.config_path.read_text(encoding="utf-8"), original)
-
-    def test_invalid_hotkey_falls_back(self) -> None:
-        self.write_config('hotkey = "Space"\n')
-
-        result = load_config(self.config_path)
-
-        self.assertEqual(result.config.hotkey.text, DEFAULT_HOTKEY)
-        self.assertTrue(any("快捷键" in warning for warning in result.warnings))
-
-    def test_invalid_search_values_fall_back(self) -> None:
-        self.write_config(
-            'hotkey = "Alt+Space"\n'
-            "[search]\n"
-            'paths = "not-a-list"\n'
-            "max_depth = 0\n"
-        )
-
-        result = load_config(self.config_path)
-
-        self.assertEqual(result.config.search.max_depth, DEFAULT_MAX_DEPTH)
-        self.assertGreaterEqual(len(result.config.search.paths), 1)
-        self.assertTrue(any("paths" in warning for warning in result.warnings))
-        self.assertTrue(any("max_depth" in warning for warning in result.warnings))
-
-    def test_unknown_keys_warn(self) -> None:
-        self.write_config(
-            'hotkey = "Alt+Space"\n'
-            "unknown = 1\n"
-            "[search]\n"
-            "paths = []\n"
-            "unknown_search = 2\n"
-        )
-
-        result = load_config(self.config_path)
-
-        self.assertTrue(any("unknown" in warning for warning in result.warnings))
-        self.assertTrue(
-            any("unknown_search" in warning for warning in result.warnings)
-        )
-
-    def test_all_invalid_paths_fall_back(self) -> None:
-        self.write_config(
-            'hotkey = "Alt+Space"\n'
-            "[search]\n"
-            'paths = ["", 3]\n'
-        )
-
-        result = load_config(self.config_path)
-
-        self.assertGreaterEqual(len(result.config.search.paths), 1)
-        self.assertTrue(any("有效路径" in warning for warning in result.warnings))
+def write_config(path: Path, text: str) -> None:
+    path.write_text(text, encoding="utf-8")
 
 
-if __name__ == "__main__":
-    unittest.main()
+def test_creates_default_config(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+
+    result = load_config(config_path)
+
+    assert result.created
+    assert config_path.exists()
+    assert result.config.hotkey.text == DEFAULT_HOTKEY
+    assert result.config.search.max_depth == DEFAULT_MAX_DEPTH
+    assert len(result.config.search.paths) >= 1
+    assert result.warnings == ()
+
+
+def test_loads_custom_values(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    write_config(
+        config_path,
+        'hotkey = "Ctrl+Shift+K"\n\n[search]\npaths = []\nmax_depth = 2\n',
+    )
+
+    result = load_config(config_path)
+
+    assert not result.created
+    assert result.config.hotkey.text == "Ctrl+Shift+K"
+    assert result.config.search.paths == ()
+    assert result.config.search.max_depth == 2
+
+
+def test_expands_relative_and_environment_paths(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    apps_dir = tmp_path / "apps"
+    apps_dir.mkdir()
+    env_dir = tmp_path / "env-dir"
+    env_dir.mkdir()
+    monkeypatch.setenv("LAUNCHER_TEST_DIR", str(env_dir))
+    config_path = tmp_path / "config.toml"
+    write_config(
+        config_path,
+        'hotkey = "Alt+Space"\n'
+        "[search]\n"
+        'paths = ["apps", "%LAUNCHER_TEST_DIR%", "apps"]\n'
+        "max_depth = 3\n",
+    )
+
+    result = load_config(config_path)
+
+    assert result.config.search.paths == (apps_dir.resolve(), env_dir.resolve())
+
+
+def test_warns_about_missing_path(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    missing = tmp_path / "missing"
+    write_config(
+        config_path,
+        'hotkey = "Alt+Space"\n'
+        "[search]\n"
+        f'paths = ["{missing.as_posix()}"]\n',
+    )
+
+    result = load_config(config_path)
+
+    assert result.config.search.paths == (missing.resolve(),)
+    assert any("不存在" in warning for warning in result.warnings)
+
+
+def test_invalid_toml_falls_back_without_overwriting(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    original = "hotkey = ["
+    write_config(config_path, original)
+
+    result = load_config(config_path)
+
+    assert result.config.hotkey.text == DEFAULT_HOTKEY
+    assert result.warnings
+    assert config_path.read_text(encoding="utf-8") == original
+
+
+def test_invalid_hotkey_falls_back(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    write_config(config_path, 'hotkey = "Space"\n')
+
+    result = load_config(config_path)
+
+    assert result.config.hotkey.text == DEFAULT_HOTKEY
+    assert any("快捷键" in warning for warning in result.warnings)
+
+
+def test_invalid_search_values_fall_back(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    write_config(
+        config_path,
+        'hotkey = "Alt+Space"\n'
+        "[search]\n"
+        'paths = "not-a-list"\n'
+        "max_depth = 0\n",
+    )
+
+    result = load_config(config_path)
+
+    assert result.config.search.max_depth == DEFAULT_MAX_DEPTH
+    assert len(result.config.search.paths) >= 1
+    assert any("paths" in warning for warning in result.warnings)
+    assert any("max_depth" in warning for warning in result.warnings)
+
+
+def test_unknown_keys_warn(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    write_config(
+        config_path,
+        'hotkey = "Alt+Space"\n'
+        "unknown = 1\n"
+        "[search]\n"
+        "paths = []\n"
+        "unknown_search = 2\n",
+    )
+
+    result = load_config(config_path)
+
+    assert any("unknown" in warning for warning in result.warnings)
+    assert any("unknown_search" in warning for warning in result.warnings)
+
+
+def test_all_invalid_paths_fall_back(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    write_config(
+        config_path,
+        'hotkey = "Alt+Space"\n'
+        "[search]\n"
+        'paths = ["", 3]\n',
+    )
+
+    result = load_config(config_path)
+
+    assert len(result.config.search.paths) >= 1
+    assert any("有效路径" in warning for warning in result.warnings)

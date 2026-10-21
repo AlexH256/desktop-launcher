@@ -1,87 +1,87 @@
-import os
-import unittest
 from pathlib import Path
 
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-
+import pytest
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication
 
 from desktop_launcher.core.search import AppEntry
 from desktop_launcher.core.window import LauncherWindow
 
-
-class WindowActivationTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls) -> None:
-        cls.app = QApplication.instance() or QApplication([])
-
-    def setUp(self) -> None:
-        self.window = LauncherWindow()
-        self.entries = (
-            AppEntry("Alpha", Path("alpha.lnk")),
-            AppEntry("Beta", Path("beta.lnk")),
-            AppEntry("Gamma", Path("gamma.lnk")),
-        )
-        self.received: list[AppEntry] = []
-        self.window.entryActivated.connect(self.received.append)
-        self.window.set_entries(self.entries)
-        self.window.show_and_focus()
-        QTest.qWait(10)
-
-    def tearDown(self) -> None:
-        self.window.close()
-        self.window.deleteLater()
-        QTest.qWait(10)
-
-    def click_item(self, row: int, button: Qt.MouseButton) -> None:
-        item = self.window._result_list.item(row)
-        rect = self.window._result_list.visualItemRect(item)
-        QTest.mouseClick(
-            self.window._result_list.viewport(),
-            button,
-            Qt.KeyboardModifier.NoModifier,
-            rect.center(),
-        )
-        QTest.qWait(10)
-
-    def test_left_click_activates_item(self) -> None:
-        self.click_item(1, Qt.MouseButton.LeftButton)
-
-        self.assertEqual(self.received, [self.entries[1]])
-
-    def test_right_click_does_not_activate_item(self) -> None:
-        self.click_item(1, Qt.MouseButton.RightButton)
-
-        self.assertEqual(self.received, [])
-
-    def test_clicking_search_input_does_not_activate_item(self) -> None:
-        QTest.mouseClick(
-            self.window.search_input,
-            Qt.MouseButton.LeftButton,
-            Qt.KeyboardModifier.NoModifier,
-            QPoint(10, 10),
-        )
-        QTest.qWait(10)
-
-        self.assertEqual(self.received, [])
-
-    def test_enter_activates_current_item(self) -> None:
-        QTest.keyClick(self.window.search_input, Qt.Key.Key_Down)
-        QTest.keyClick(self.window.search_input, Qt.Key.Key_Return)
-        QTest.qWait(10)
-
-        self.assertEqual(self.received, [self.entries[1]])
-
-    def test_enter_without_results_does_nothing(self) -> None:
-        self.window.search_input.setText("zzz")
-        QTest.qWait(10)
-        QTest.keyClick(self.window.search_input, Qt.Key.Key_Return)
-        QTest.qWait(10)
-
-        self.assertEqual(self.received, [])
+ENTRIES = (
+    AppEntry("Alpha", Path("alpha.lnk")),
+    AppEntry("Beta", Path("beta.lnk")),
+    AppEntry("Gamma", Path("gamma.lnk")),
+)
 
 
-if __name__ == "__main__":
-    unittest.main()
+@pytest.fixture
+def window(qapp):
+    window = LauncherWindow()
+    window.set_entries(ENTRIES)
+    window.show_and_focus()
+    QTest.qWait(10)
+    yield window
+    window.close()
+    window.deleteLater()
+    QTest.qWait(10)
+
+
+@pytest.fixture
+def received(window):
+    entries: list[AppEntry] = []
+    window.entryActivated.connect(entries.append)
+    return entries
+
+
+def click_item(window: LauncherWindow, row: int, button: Qt.MouseButton) -> None:
+    item = window._result_list.item(row)
+    assert item is not None
+    rect = window._result_list.visualItemRect(item)
+    QTest.mouseClick(
+        window._result_list.viewport(),
+        button,
+        Qt.KeyboardModifier.NoModifier,
+        rect.center(),
+    )
+    QTest.qWait(10)
+
+
+def test_left_click_activates_item(window, received) -> None:
+    click_item(window, 1, Qt.MouseButton.LeftButton)
+
+    assert received == [ENTRIES[1]]
+
+
+def test_right_click_does_not_activate_item(window, received) -> None:
+    click_item(window, 1, Qt.MouseButton.RightButton)
+
+    assert received == []
+
+
+def test_clicking_search_input_does_not_activate_item(window, received) -> None:
+    QTest.mouseClick(
+        window.search_input,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+        QPoint(10, 10),
+    )
+    QTest.qWait(10)
+
+    assert received == []
+
+
+def test_enter_activates_current_item(window, received) -> None:
+    QTest.keyClick(window.search_input, Qt.Key.Key_Down)
+    QTest.keyClick(window.search_input, Qt.Key.Key_Return)
+    QTest.qWait(10)
+
+    assert received == [ENTRIES[1]]
+
+
+def test_enter_without_results_does_nothing(window, received) -> None:
+    window.search_input.setText("zzz")
+    QTest.qWait(10)
+    QTest.keyClick(window.search_input, Qt.Key.Key_Return)
+    QTest.qWait(10)
+
+    assert received == []
