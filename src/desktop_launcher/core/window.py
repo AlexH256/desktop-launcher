@@ -97,7 +97,7 @@ class LauncherWindow(QWidget):
         self._result_list.setVerticalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAsNeeded
         )
-        self._result_list.itemDoubleClicked.connect(self._on_item_double_clicked)
+        self._result_list.itemClicked.connect(self._on_item_clicked)
         self._result_list.hide()
         inner.addWidget(self._result_list)
 
@@ -220,7 +220,7 @@ class LauncherWindow(QWidget):
         if item is not None:
             self._emit_entry(item)
 
-    def _on_item_double_clicked(self, item: QListWidgetItem) -> None:
+    def _on_item_clicked(self, item: QListWidgetItem) -> None:
         self._emit_entry(item)
 
     def _emit_entry(self, item: QListWidgetItem) -> None:
