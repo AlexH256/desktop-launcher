@@ -1,11 +1,12 @@
 from pathlib import Path
 
 import pytest
-from PySide6.QtCore import QPoint, Qt
+from PySide6.QtCore import QPoint, QSize, Qt
 from PySide6.QtTest import QTest
+from PySide6.QtWidgets import QStyleOptionViewItem
 
 from desktop_launcher.core.search import AppEntry
-from desktop_launcher.core.window import LauncherWindow
+from desktop_launcher.core.window import ICON_SIZE, LauncherWindow
 
 ENTRIES = (
     AppEntry("Alpha", Path("alpha.lnk")),
@@ -85,3 +86,15 @@ def test_enter_without_results_does_nothing(window, received) -> None:
     QTest.qWait(10)
 
     assert received == []
+
+
+def test_items_show_icons(window) -> None:
+    delegate = window._result_list.itemDelegate()
+    index = window._result_list.model().index(0, 0)
+    option = QStyleOptionViewItem()
+
+    delegate.initStyleOption(option, index)
+
+    assert not option.icon.isNull()
+    assert option.features & QStyleOptionViewItem.ViewItemFeature.HasDecoration
+    assert option.decorationSize == QSize(ICON_SIZE, ICON_SIZE)
