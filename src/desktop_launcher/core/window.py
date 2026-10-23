@@ -12,6 +12,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QFrame,
     QLabel,
     QLineEdit,
@@ -186,6 +187,24 @@ class LauncherWindow(QWidget):
                 self._move_selection(-1)
                 return True
         return super().eventFilter(watched, event)
+
+    def event(self, event) -> bool:
+        if event.type() == QEvent.Type.WindowDeactivate:
+            QTimer.singleShot(0, self._hide_on_focus_loss)
+        return super().event(event)
+
+    def _has_active_modal(self) -> bool:
+        app = QApplication.instance()
+        return app is not None and app.activeModalWidget() is not None
+
+    def _hide_on_focus_loss(self) -> None:
+        if not self.isVisible():
+            return
+        if self._has_active_modal():
+            return
+        if self.isActiveWindow():
+            return
+        self.hide_launcher()
 
     def _move_selection(self, delta: int) -> None:
         count = self._result_list.count()

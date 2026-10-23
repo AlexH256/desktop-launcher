@@ -1,9 +1,9 @@
 from pathlib import Path
 
 import pytest
-from PySide6.QtCore import QPoint, QSize, Qt
+from PySide6.QtCore import QEvent, QPoint, QSize, Qt
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QStyleOptionViewItem
+from PySide6.QtWidgets import QApplication, QStyleOptionViewItem
 
 from desktop_launcher.core.search import AppEntry
 from desktop_launcher.core.window import ICON_SIZE, LauncherWindow
@@ -135,3 +135,37 @@ def test_custom_stylesheet_is_applied(qapp) -> None:
 
     window.deleteLater()
     QTest.qWait(10)
+
+
+def test_window_deactivate_hides_window(window, monkeypatch) -> None:
+    monkeypatch.setattr(window, "isActiveWindow", lambda: False)
+
+    QApplication.sendEvent(window, QEvent(QEvent.Type.WindowDeactivate))
+    QTest.qWait(20)
+
+    assert not window.isVisible()
+
+
+def test_window_deactivate_keeps_window_when_modal_is_open(
+    window,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(window, "isActiveWindow", lambda: False)
+    monkeypatch.setattr(window, "_has_active_modal", lambda: True)
+
+    QApplication.sendEvent(window, QEvent(QEvent.Type.WindowDeactivate))
+    QTest.qWait(20)
+
+    assert window.isVisible()
+
+
+def test_window_deactivate_keeps_window_when_reactivated(
+    window,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(window, "isActiveWindow", lambda: True)
+
+    QApplication.sendEvent(window, QEvent(QEvent.Type.WindowDeactivate))
+    QTest.qWait(20)
+
+    assert window.isVisible()
