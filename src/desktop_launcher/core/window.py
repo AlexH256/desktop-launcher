@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 
 from desktop_launcher.core.icons import LinkIconProvider
 from desktop_launcher.core.search import AppEntry, filter_entries
+from desktop_launcher.core.style import DEFAULT_STYLESHEET
 
 WINDOW_WIDTH = 720
 SEARCH_HEIGHT = 44
@@ -67,7 +68,7 @@ class _LauncherItemDelegate(QStyledItemDelegate):
 class LauncherWindow(QWidget):
     entryActivated = Signal(object)
 
-    def __init__(self) -> None:
+    def __init__(self, stylesheet: str = DEFAULT_STYLESHEET) -> None:
         super().__init__()
         self._entries: tuple[AppEntry, ...] = ()
         self._weights: dict[str, int] = {}
@@ -143,68 +144,8 @@ class LauncherWindow(QWidget):
         self._result_list.hide()
         inner.addWidget(self._result_list)
 
-        self.setStyleSheet(
-            """
-            #card {
-                background-color: rgba(32, 32, 36, 240);
-                border: 1px solid rgba(255, 255, 255, 40);
-                border-radius: 16px;
-            }
-            #searchInput {
-                background: transparent;
-                border: none;
-                color: #f2f2f2;
-                font-size: 18px;
-                padding: 4px 2px;
-                selection-background-color: #3d7eff;
-            }
-            #searchInput QToolButton {
-                background: transparent;
-                border: none;
-            }
-            #statusLabel {
-                color: rgba(255, 255, 255, 150);
-                font-size: 13px;
-                padding-left: 4px;
-            }
-            #resultList {
-                background: transparent;
-                border: none;
-                outline: none;
-                color: #f2f2f2;
-                font-size: 15px;
-            }
-            #resultList::item {
-                border-radius: 8px;
-                padding-left: 10px;
-            }
-            #resultList::item:hover {
-                background-color: rgba(255, 255, 255, 20);
-            }
-            #resultList::item:selected {
-                background-color: #3d7eff;
-                color: #ffffff;
-            }
-            QScrollBar:vertical {
-                background: transparent;
-                width: 8px;
-                margin: 0;
-            }
-            QScrollBar::handle:vertical {
-                background: rgba(255, 255, 255, 50);
-                border-radius: 4px;
-                min-height: 20px;
-            }
-            QScrollBar::add-line:vertical,
-            QScrollBar::sub-line:vertical {
-                height: 0;
-            }
-            QScrollBar::add-page:vertical,
-            QScrollBar::sub-page:vertical {
-                background: transparent;
-            }
-            """
-        )
+        if stylesheet:
+            self.setStyleSheet(stylesheet)
 
         self._escape_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
         self._escape_shortcut.setContext(Qt.ShortcutContext.WindowShortcut)

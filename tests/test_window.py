@@ -126,3 +126,12 @@ def test_equal_weights_sort_by_name(window) -> None:
     ]
 
     assert names == ["Alpha", "Beta", "Gamma"]
+
+
+def test_custom_stylesheet_is_applied(qapp) -> None:
+    window = LauncherWindow(stylesheet="#card { color: red; }")
+
+    assert window.styleSheet() == "#card { color: red; }"
+
+    window.deleteLater()
+    QTest.qWait(10)

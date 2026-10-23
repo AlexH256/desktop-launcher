@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 from desktop_launcher.core.config import load_config
 from desktop_launcher.core.hotkey import GlobalHotkey
 from desktop_launcher.core.search import AppEntry, LinkIndex
+from desktop_launcher.core.style import load_stylesheet
 from desktop_launcher.core.weights import WeightStore
 from desktop_launcher.core.window import LauncherWindow
 
@@ -80,11 +81,12 @@ def main() -> int:
 
     result = load_config()
     config = result.config
+    style = load_stylesheet()
 
     weights = WeightStore()
     weights.load()
 
-    window = LauncherWindow()
+    window = LauncherWindow(style.stylesheet)
     window.set_weights(weights.snapshot())
     index = LinkIndex(
         config.search.paths,
@@ -104,7 +106,7 @@ def main() -> int:
 
     registered = hotkey.register()
 
-    notices = list(result.warnings) + list(weights.warnings)
+    notices = list(result.warnings) + list(style.warnings) + list(weights.warnings)
     if not registered:
         notices.append(
             f"全局快捷键 {config.hotkey.text} 注册失败，可能已被其他程序占用"
