@@ -68,6 +68,75 @@ def test_record_launch_preserves_visibility(tmp_path: Path) -> None:
     assert store.snapshot()[weight_key(path)] == SearchRecord(2, False)
 
 
+def test_set_visible_preserves_weight_and_persists(tmp_path: Path) -> None:
+    store = make_store(tmp_path)
+    path = tmp_path / "app.lnk"
+    path.write_text("", encoding="utf-8")
+    store.record_launch(path)
+    store.record_launch(path)
+
+    assert store.set_visible(path, False) is True
+    assert store.weight_for(path) == 2
+    assert store.is_visible(path) is False
+
+    reloaded = make_store(tmp_path)
+    assert reloaded.weight_for(path) == 2
+    assert reloaded.is_visible(path) is False
+
+
+def test_set_visibility_updates_multiple_entries(tmp_path: Path) -> None:
+    store = make_store(tmp_path)
+    first = tmp_path / "first.lnk"
+    second = tmp_path / "second.lnk"
+    first.write_text("", encoding="utf-8")
+    second.write_text("", encoding="utf-8")
+    store.record_launch(first)
+    store.record_launch(second)
+
+    assert store.set_visibility(
+        {
+            weight_key(first): False,
+            weight_key(second): False,
+        }
+    ) is True
+    assert store.is_visible(first) is False
+    assert store.is_visible(second) is False
+
+    reloaded = make_store(tmp_path)
+    assert reloaded.is_visible(first) is False
+    assert reloaded.is_visible(second) is False
+
+
+def test_set_visible_creates_missing_record(tmp_path: Path) -> None:
+    store = make_store(tmp_path)
+    path = Path("C:/Apps/App.lnk")
+
+    assert store.set_visible(path, False) is True
+    assert store.is_visible(path) is False
+    assert store.weight_for(path) == 0
+
+
+def test_set_visibility_rolls_back_on_save_failure(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    store = make_store(tmp_path)
+    path = tmp_path / "app.lnk"
+    path.write_text("", encoding="utf-8")
+    store.record_launch(path)
+
+    def fail(*args, **kwargs):
+        raise OSError("boom")
+
+    monkeypatch.setattr(config_module.os, "replace", fail)
+
+    assert store.set_visible(path, False) is False
+    assert store.is_visible(path) is True
+    assert store.weight_for(path) == 1
+    assert store.warnings
+    assert list(tmp_path.glob("*.tmp")) == []
+
+
 def test_weight_key_is_case_insensitive(tmp_path: Path) -> None:
     store = make_store(tmp_path)
 

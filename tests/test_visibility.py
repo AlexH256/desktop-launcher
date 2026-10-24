@@ -2,7 +2,7 @@ from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QPoint, Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QListWidgetItem, QStyleOptionViewItem
 
@@ -123,3 +123,37 @@ def test_items_show_icons(dialog: VisibilityDialog) -> None:
 
     assert not option.icon.isNull()
     assert option.features & QStyleOptionViewItem.ViewItemFeature.HasDecoration
+
+
+def test_clicking_item_text_does_not_select(dialog: VisibilityDialog) -> None:
+    item = find_item(dialog, "Alpha")
+    rect = dialog._list.visualItemRect(item)
+
+    QTest.mouseClick(
+        dialog._list.viewport(),
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+        rect.center(),
+    )
+    QTest.qWait(10)
+
+    assert dialog._list.selectedItems() == []
+
+
+def test_clicking_checkbox_still_toggles(
+    dialog: VisibilityDialog,
+    store: SearchConfigStore,
+) -> None:
+    item = find_item(dialog, "Gamma")
+    rect = dialog._list.visualItemRect(item)
+
+    QTest.mouseClick(
+        dialog._list.viewport(),
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+        QPoint(rect.left() + 3, rect.center().y()),
+    )
+    QTest.qWait(10)
+
+    assert item.checkState() == Qt.CheckState.Unchecked
+    assert store.is_visible(ENTRIES[2].path) is False

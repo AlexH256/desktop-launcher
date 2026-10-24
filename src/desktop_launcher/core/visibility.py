@@ -2,6 +2,7 @@ from collections.abc import Mapping, Sequence
 
 from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QDialog,
     QHBoxLayout,
     QLabel,
@@ -67,6 +68,9 @@ class VisibilityDialog(QDialog):
         layout.addWidget(hint)
 
         self._list = QListWidget(self)
+        self._list.setSelectionMode(
+            QAbstractItemView.SelectionMode.NoSelection
+        )
         self._list.setUniformItemSizes(True)
         self._list.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
         self._icon_provider = LinkIconProvider()
