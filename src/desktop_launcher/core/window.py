@@ -194,8 +194,9 @@ class LauncherWindow(QWidget):
         return super().event(event)
 
     def _has_active_modal(self) -> bool:
-        app = QApplication.instance()
-        return app is not None and app.activeModalWidget() is not None
+        if QApplication.instance() is None:
+            return False
+        return QApplication.activeModalWidget() is not None
 
     def _hide_on_focus_loss(self) -> None:
         if not self.isVisible():

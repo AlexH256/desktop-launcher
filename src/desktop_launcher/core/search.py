@@ -4,6 +4,7 @@ import unicodedata
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal
 
@@ -218,9 +219,9 @@ class LinkIndex(QObject):
 
     def _on_finished(self, entries: object) -> None:
         self._finish_scan()
-        if entries is None:
+        if not isinstance(entries, tuple):
             return
-        self._entries = tuple(entries)
+        self._entries = cast(tuple[AppEntry, ...], entries)
         self.updated.emit(self._entries)
 
     def _on_failed(self, message: str) -> None:
