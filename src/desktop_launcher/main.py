@@ -2,6 +2,7 @@ import os
 import sys
 from collections.abc import Callable
 
+from PySide6.QtCore import QObject, QRunnable, QThreadPool, QTimer, Signal
 from PySide6.QtGui import QAction, QIcon
 from PySide6.QtWidgets import (
     QApplication,
@@ -21,31 +22,68 @@ from desktop_launcher.core.visibility import VisibilityDialog
 from desktop_launcher.core.window import LauncherWindow
 
 
-def _launch_entry(window: LauncherWindow, entry: AppEntry) -> bool:
-    try:
-        os.startfile(str(entry.path))
-    except OSError as exc:
+class _LaunchSignals(QObject):
+    succeeded = Signal(object)
+    failed = Signal(object, str)
+
+
+class _LaunchTask(QRunnable):
+    def __init__(self, entry: AppEntry, signals: _LaunchSignals) -> None:
+        super().__init__()
+        self._entry = entry
+        self._signals = signals
+
+    def run(self) -> None:
+        try:
+            os.startfile(str(self._entry.path))
+        except OSError as exc:
+            self._signals.failed.emit(self._entry, str(exc))
+        else:
+            self._signals.succeeded.emit(self._entry)
+
+
+class LaunchController(QObject):
+    def __init__(
+        self,
+        window: LauncherWindow,
+        store: SearchConfigStore,
+        parent: QObject | None = None,
+        thread_pool: QThreadPool | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._window = window
+        self._store = store
+        self._thread_pool = thread_pool or QThreadPool(self)
+        self._active = False
+        self._signals = _LaunchSignals(self)
+        self._signals.succeeded.connect(self._on_succeeded)
+        self._signals.failed.connect(self._on_failed)
+
+    def launch(self, entry: AppEntry) -> None:
+        if self._active:
+            return
+        self._active = True
+        self._window.hide_launcher()
+        self._thread_pool.start(_LaunchTask(entry, self._signals))
+
+    def _on_succeeded(self, entry: AppEntry) -> None:
+        self._active = False
+        QTimer.singleShot(0, lambda: self._record_success(entry))
+
+    def _on_failed(self, entry: AppEntry, message: str) -> None:
+        self._active = False
+        self._window.show_and_focus()
         QMessageBox.warning(
-            window,
+            self._window,
             "启动失败",
-            f"无法启动 {entry.name}\n{entry.path}\n\n{exc}",
+            f"无法启动 {entry.name}\n{entry.path}\n\n{message}",
         )
-        return False
-    window.hide_launcher()
-    return True
 
-
-def _activate_entry(
-    window: LauncherWindow,
-    entry: AppEntry,
-    store: SearchConfigStore,
-) -> None:
-    if not _launch_entry(window, entry):
-        return
-    if not store.record_launch(entry.path):
-        detail = store.warnings[-1] if store.warnings else "未知错误"
-        print(detail, file=sys.stderr)
-    window.set_search_config(store.snapshot())
+    def _record_success(self, entry: AppEntry) -> None:
+        if not self._store.record_launch(entry.path):
+            detail = self._store.warnings[-1] if self._store.warnings else "未知错误"
+            print(detail, file=sys.stderr)
+        self._window.set_search_config(self._store.snapshot())
 
 
 def _create_tray_icon(
@@ -96,6 +134,7 @@ def main() -> int:
 
     window = LauncherWindow(style.stylesheet)
     window.set_search_config(store.snapshot())
+    launch_controller = LaunchController(window, store, parent=app)
     index = LinkIndex(
         config.search.paths,
         config.search.max_depth,
@@ -137,9 +176,7 @@ def main() -> int:
         dialog.activateWindow()
 
     hotkey.activated.connect(show_launcher)
-    window.entryActivated.connect(
-        lambda entry: _activate_entry(window, entry, store)
-    )
+    window.entryActivated.connect(launch_controller.launch)
 
     registered = hotkey.register()
 
