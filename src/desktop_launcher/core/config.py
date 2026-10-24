@@ -8,6 +8,7 @@ from desktop_launcher.core.hotkey import HotkeyBinding, HotkeyParseError, parse_
 APP_DIR_NAME = "DesktopLauncher"
 CONFIG_FILE_NAME = "config.toml"
 DEFAULT_HOTKEY = "Alt+Space"
+DEFAULT_AUTOSTART = True
 DEFAULT_MAX_DEPTH = 5
 DEFAULT_SEARCH_PATHS = (
     "%USERPROFILE%/Desktop",
@@ -17,6 +18,9 @@ DEFAULT_SEARCH_PATHS = (
 
 DEFAULT_CONFIG_TEXT = """# 全局快捷键：修饰键 + 按键，例如 "Alt+Space"、"Ctrl+Alt+K"
 hotkey = "Alt+Space"
+
+# 开机自动启动：true 开启，false 关闭
+autostart = true
 
 [search]
 # 支持 ~ 和 %USERPROFILE%、%APPDATA% 等环境变量
@@ -40,6 +44,7 @@ class SearchConfig:
 @dataclass(frozen=True, slots=True)
 class AppConfig:
     hotkey: HotkeyBinding
+    autostart: bool
     search: SearchConfig
 
 
@@ -84,7 +89,7 @@ def _default_config(base_dir: Path) -> AppConfig:
         paths=_normalize_paths(DEFAULT_SEARCH_PATHS, base_dir, [], warn_missing=False),
         max_depth=DEFAULT_MAX_DEPTH,
     )
-    return AppConfig(hotkey=binding, search=search)
+    return AppConfig(hotkey=binding, autostart=DEFAULT_AUTOSTART, search=search)
 
 
 def _write_default_config(path: Path, warnings: list[str]) -> bool:
@@ -100,15 +105,27 @@ def _write_default_config(path: Path, warnings: list[str]) -> bool:
 def _parse_config(raw: dict, config_path: Path, warnings: list[str]) -> AppConfig:
     base_dir = config_path.parent
 
-    allowed_top = {"hotkey", "search"}
+    allowed_top = {"hotkey", "autostart", "search"}
     for key in raw:
         if key not in allowed_top:
             warnings.append(f"未知配置项：{key}")
 
     return AppConfig(
         hotkey=_parse_hotkey_value(raw.get("hotkey"), warnings),
+        autostart=_parse_autostart_value(raw.get("autostart"), warnings),
         search=_parse_search_value(raw.get("search"), base_dir, warnings),
     )
+
+
+def _parse_autostart_value(value: object, warnings: list[str]) -> bool:
+    if value is None:
+        return DEFAULT_AUTOSTART
+    if not isinstance(value, bool):
+        warnings.append(
+            f"autostart 必须是布尔值，已使用默认值 {str(DEFAULT_AUTOSTART).lower()}"
+        )
+        return DEFAULT_AUTOSTART
+    return value
 
 
 def _parse_hotkey_value(value: object, warnings: list[str]) -> HotkeyBinding:

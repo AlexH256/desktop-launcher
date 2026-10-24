@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
 )
 
 from desktop_launcher.core.app_icon import load_app_icon
+from desktop_launcher.core.autostart import sync_autostart
 from desktop_launcher.core.config import load_config
 from desktop_launcher.core.hotkey import GlobalHotkey
 from desktop_launcher.core.search import AppEntry, LinkIndex
@@ -86,6 +87,7 @@ def main() -> int:
 
     result = load_config()
     config = result.config
+    autostart_warning = sync_autostart(config.autostart)
     style = load_stylesheet()
     app_icon = load_app_icon()
 
@@ -142,6 +144,8 @@ def main() -> int:
     registered = hotkey.register()
 
     notices = list(result.warnings) + list(style.warnings) + list(store.warnings)
+    if autostart_warning:
+        notices.append(autostart_warning)
     if not registered:
         notices.append(
             f"全局快捷键 {config.hotkey.text} 注册失败，可能已被其他程序占用"
