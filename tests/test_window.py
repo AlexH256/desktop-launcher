@@ -101,6 +101,13 @@ def test_items_show_icons(window) -> None:
     assert option.decorationSize == QSize(ICON_SIZE, ICON_SIZE)
 
 
+def test_result_list_hides_vertical_scrollbar(window) -> None:
+    assert (
+        window._result_list.verticalScrollBarPolicy()
+        == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+    )
+
+
 def test_set_search_config_reorders_items(window) -> None:
     window.set_search_config(
         {weight_key(ENTRIES[2].path): SearchRecord(weight=5)}

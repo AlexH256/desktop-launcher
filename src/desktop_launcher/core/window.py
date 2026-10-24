@@ -112,7 +112,7 @@ class LauncherWindow(QWidget):
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         )
         self._result_list.setVerticalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAsNeeded
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         )
         self._result_list.itemClicked.connect(self._on_item_clicked)
         self._result_list.hide()
