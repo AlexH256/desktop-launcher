@@ -10,6 +10,10 @@ CONFIG_FILE_NAME = "config.toml"
 DEFAULT_HOTKEY = "Alt+Space"
 DEFAULT_AUTOSTART = True
 DEFAULT_MAX_DEPTH = 5
+DEFAULT_WINDOW_WIDTH = 560
+DEFAULT_SEARCH_HEIGHT = 44
+DEFAULT_ROW_HEIGHT = 38
+DEFAULT_WINDOW_PLACEHOLDER = "搜索应用…"
 DEFAULT_SEARCH_PATHS = (
     "%USERPROFILE%/Desktop",
     "%APPDATA%/Microsoft/Windows/Start Menu/Programs",
@@ -21,6 +25,16 @@ hotkey = "Alt+Space"
 
 # 开机自动启动：true 开启，false 关闭
 autostart = true
+
+[window]
+# 窗口宽度（像素）
+width = 560
+# 搜索框高度（像素）
+search_height = 44
+# 结果列表行高（像素）
+row_height = 38
+# 搜索框占位文本
+placeholder = "搜索应用…"
 
 [search]
 # 支持 ~ 和 %USERPROFILE%、%APPDATA% 等环境变量
@@ -42,9 +56,18 @@ class SearchConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class WindowConfig:
+    width: int = DEFAULT_WINDOW_WIDTH
+    search_height: int = DEFAULT_SEARCH_HEIGHT
+    row_height: int = DEFAULT_ROW_HEIGHT
+    placeholder: str = DEFAULT_WINDOW_PLACEHOLDER
+
+
+@dataclass(frozen=True, slots=True)
 class AppConfig:
     hotkey: HotkeyBinding
     autostart: bool
+    window: WindowConfig
     search: SearchConfig
 
 
@@ -89,7 +112,12 @@ def _default_config(base_dir: Path) -> AppConfig:
         paths=_normalize_paths(DEFAULT_SEARCH_PATHS, base_dir, [], warn_missing=False),
         max_depth=DEFAULT_MAX_DEPTH,
     )
-    return AppConfig(hotkey=binding, autostart=DEFAULT_AUTOSTART, search=search)
+    return AppConfig(
+        hotkey=binding,
+        autostart=DEFAULT_AUTOSTART,
+        window=WindowConfig(),
+        search=search,
+    )
 
 
 def _write_default_config(path: Path, warnings: list[str]) -> bool:
@@ -105,7 +133,7 @@ def _write_default_config(path: Path, warnings: list[str]) -> bool:
 def _parse_config(raw: dict, config_path: Path, warnings: list[str]) -> AppConfig:
     base_dir = config_path.parent
 
-    allowed_top = {"hotkey", "autostart", "search"}
+    allowed_top = {"hotkey", "autostart", "window", "search"}
     for key in raw:
         if key not in allowed_top:
             warnings.append(f"未知配置项：{key}")
@@ -113,6 +141,7 @@ def _parse_config(raw: dict, config_path: Path, warnings: list[str]) -> AppConfi
     return AppConfig(
         hotkey=_parse_hotkey_value(raw.get("hotkey"), warnings),
         autostart=_parse_autostart_value(raw.get("autostart"), warnings),
+        window=_parse_window_value(raw.get("window"), warnings),
         search=_parse_search_value(raw.get("search"), base_dir, warnings),
     )
 
@@ -125,6 +154,67 @@ def _parse_autostart_value(value: object, warnings: list[str]) -> bool:
             f"autostart 必须是布尔值，已使用默认值 {str(DEFAULT_AUTOSTART).lower()}"
         )
         return DEFAULT_AUTOSTART
+    return value
+
+
+def _parse_window_value(value: object, warnings: list[str]) -> WindowConfig:
+    defaults = WindowConfig()
+    if value is None:
+        return defaults
+    if not isinstance(value, dict):
+        warnings.append("[window] 必须是表，已使用默认窗口配置")
+        return defaults
+
+    allowed_window = {"width", "search_height", "row_height", "placeholder"}
+    for key in value:
+        if key not in allowed_window:
+            warnings.append(f"未知窗口配置项：window.{key}")
+
+    return WindowConfig(
+        width=_parse_positive_int(
+            value.get("width"),
+            "window.width",
+            defaults.width,
+            warnings,
+        ),
+        search_height=_parse_positive_int(
+            value.get("search_height"),
+            "window.search_height",
+            defaults.search_height,
+            warnings,
+        ),
+        row_height=_parse_positive_int(
+            value.get("row_height"),
+            "window.row_height",
+            defaults.row_height,
+            warnings,
+        ),
+        placeholder=_parse_placeholder_value(value.get("placeholder"), warnings),
+    )
+
+
+def _parse_positive_int(
+    value: object,
+    name: str,
+    default: int,
+    warnings: list[str],
+) -> int:
+    if value is None:
+        return default
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        warnings.append(f"{name} 必须是正整数，已使用默认值 {default}")
+        return default
+    return value
+
+
+def _parse_placeholder_value(value: object, warnings: list[str]) -> str:
+    if value is None:
+        return DEFAULT_WINDOW_PLACEHOLDER
+    if not isinstance(value, str):
+        warnings.append(
+            f"window.placeholder 必须是字符串，已使用默认值 {DEFAULT_WINDOW_PLACEHOLDER}"
+        )
+        return DEFAULT_WINDOW_PLACEHOLDER
     return value
 
 

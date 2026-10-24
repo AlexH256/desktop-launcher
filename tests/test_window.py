@@ -5,6 +5,7 @@ from PySide6.QtCore import QEvent, QPoint, QSize, Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QStyleOptionViewItem
 
+from desktop_launcher.core.config import WindowConfig
 from desktop_launcher.core.search import AppEntry
 from desktop_launcher.core.search_config import SearchRecord, weight_key
 from desktop_launcher.core.window import ICON_SIZE, LauncherWindow
@@ -179,6 +180,32 @@ def test_custom_stylesheet_is_applied(qapp) -> None:
 
     assert window.styleSheet() == "#card { color: red; }"
 
+    window.deleteLater()
+    QTest.qWait(10)
+
+
+def test_custom_window_config_is_applied(qapp) -> None:
+    window = LauncherWindow(
+        window_config=WindowConfig(
+            width=640,
+            search_height=50,
+            row_height=42,
+            placeholder="查找应用",
+        )
+    )
+    window.set_entries(ENTRIES)
+    window.show_and_focus()
+    QTest.qWait(10)
+
+    item = window._result_list.item(0)
+    assert item is not None
+    assert window.width() == 640
+    assert window.search_input.placeholderText() == "查找应用"
+    assert window.search_input.height() == 50
+    assert item.sizeHint().height() == 42
+    assert window._result_list.height() == len(ENTRIES) * 42
+
+    window.close()
     window.deleteLater()
     QTest.qWait(10)
 

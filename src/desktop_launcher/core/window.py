@@ -22,15 +22,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from desktop_launcher.core.config import WindowConfig
 from desktop_launcher.core.icons import LinkIconProvider
 from desktop_launcher.core.item_delegate import AppEntryItemDelegate
 from desktop_launcher.core.search import AppEntry, filter_entries
 from desktop_launcher.core.search_config import SearchRecord, weight_key
 from desktop_launcher.core.style import DEFAULT_STYLESHEET
 
-WINDOW_WIDTH = 720
-SEARCH_HEIGHT = 44
-ROW_HEIGHT = 38
 MAX_VISIBLE_ROWS = 8
 STATUS_HEIGHT = 26
 ICON_SIZE = 20
@@ -39,8 +37,14 @@ ICON_SIZE = 20
 class LauncherWindow(QWidget):
     entryActivated = Signal(object)
 
-    def __init__(self, stylesheet: str = DEFAULT_STYLESHEET) -> None:
+    def __init__(
+        self,
+        stylesheet: str = DEFAULT_STYLESHEET,
+        window_config: WindowConfig | None = None,
+    ) -> None:
         super().__init__()
+        config = window_config or WindowConfig()
+        self._row_height = config.row_height
         self._entries: tuple[AppEntry, ...] = ()
         self._weights: dict[str, int] = {}
         self._hidden: set[str] = set()
@@ -54,7 +58,7 @@ class LauncherWindow(QWidget):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setWindowTitle("Desktop Launcher")
-        self.setFixedWidth(WINDOW_WIDTH)
+        self.setFixedWidth(config.width)
 
         self._card = QFrame(self)
         self._card.setObjectName("card")
@@ -70,9 +74,9 @@ class LauncherWindow(QWidget):
 
         self.search_input = QLineEdit(self._card)
         self.search_input.setObjectName("searchInput")
-        self.search_input.setPlaceholderText("搜索应用…")
+        self.search_input.setPlaceholderText(config.placeholder)
         self.search_input.setClearButtonEnabled(True)
-        self.search_input.setFixedHeight(SEARCH_HEIGHT)
+        self.search_input.setFixedHeight(config.search_height)
         self.search_input.textChanged.connect(self._apply_filter)
         self.search_input.returnPressed.connect(self._activate_current)
         self.search_input.installEventFilter(self)
@@ -103,7 +107,7 @@ class LauncherWindow(QWidget):
         self._icon_provider = LinkIconProvider()
         self._item_delegate = AppEntryItemDelegate(
             self._icon_provider,
-            ROW_HEIGHT,
+            self._row_height,
             ICON_SIZE,
             self._result_list,
         )
@@ -230,13 +234,13 @@ class LauncherWindow(QWidget):
             item = QListWidgetItem(entry.name)
             item.setData(Qt.ItemDataRole.UserRole, entry)
             item.setToolTip(str(entry.path))
-            item.setSizeHint(QSize(0, ROW_HEIGHT))
+            item.setSizeHint(QSize(0, self._row_height))
             self._result_list.addItem(item)
 
         if filtered:
             self._result_list.setCurrentRow(0)
             self._result_list.setFixedHeight(
-                min(len(filtered), MAX_VISIBLE_ROWS) * ROW_HEIGHT
+                min(len(filtered), MAX_VISIBLE_ROWS) * self._row_height
             )
             self._status_label.hide()
             self._result_list.show()
@@ -266,7 +270,8 @@ class LauncherWindow(QWidget):
         content_height = self.search_input.height()
         if rows:
             content_height += (
-                self._inner_layout.spacing() + min(rows, MAX_VISIBLE_ROWS) * ROW_HEIGHT
+                self._inner_layout.spacing()
+                + min(rows, MAX_VISIBLE_ROWS) * self._row_height
             )
         else:
             content_height += self._inner_layout.spacing() + STATUS_HEIGHT

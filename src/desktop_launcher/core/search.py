@@ -182,6 +182,7 @@ class LinkIndex(QObject):
         self._throttle_seconds = throttle_seconds
         self._entries: tuple[AppEntry, ...] = ()
         self._scanning = False
+        self._refresh_pending = False
         self._last_scan = 0.0
         self._scan_signals: _ScanSignals | None = None
         self._thread_pool = QThreadPool(self)
@@ -199,6 +200,8 @@ class LinkIndex(QObject):
 
     def refresh(self, force: bool = False) -> None:
         if self._scanning:
+            if force:
+                self._refresh_pending = True
             return
 
         now = time.monotonic()
@@ -219,16 +222,23 @@ class LinkIndex(QObject):
 
     def _on_finished(self, entries: object) -> None:
         self._finish_scan()
-        if not isinstance(entries, tuple):
-            return
-        self._entries = cast(tuple[AppEntry, ...], entries)
-        self.updated.emit(self._entries)
+        if isinstance(entries, tuple):
+            self._entries = cast(tuple[AppEntry, ...], entries)
+            self.updated.emit(self._entries)
+        self._refresh_if_pending()
 
     def _on_failed(self, message: str) -> None:
         self._finish_scan()
         self.failed.emit(message)
+        self._refresh_if_pending()
 
     def _finish_scan(self) -> None:
         self._scanning = False
         self._last_scan = time.monotonic()
         self._scan_signals = None
+
+    def _refresh_if_pending(self) -> None:
+        if not self._refresh_pending:
+            return
+        self._refresh_pending = False
+        self.refresh(force=True)

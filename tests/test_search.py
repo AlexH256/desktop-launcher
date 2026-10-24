@@ -1,9 +1,11 @@
 from pathlib import Path
 
 import pytest
+from PySide6.QtCore import QRunnable
 
 from desktop_launcher.core.search import (
     AppEntry,
+    LinkIndex,
     filter_entries,
     scan_links,
     subsequence_match,
@@ -197,3 +199,58 @@ def test_missing_directory_is_ignored(tmp_path: Path) -> None:
     )
 
     assert [entry.name for entry in entries] == ["app"]
+
+
+class QueuedThreadPool:
+    def __init__(self) -> None:
+        self.tasks: list[QRunnable] = []
+
+    def start(self, task: QRunnable) -> None:
+        self.tasks.append(task)
+
+
+def test_forced_refresh_bypasses_throttle_and_finds_new_links(
+    tmp_path: Path,
+    qapp,
+) -> None:
+    touch(tmp_path, "first.lnk")
+    index = LinkIndex([tmp_path], max_depth=5, throttle_seconds=3600)
+    pool = QueuedThreadPool()
+    index._thread_pool = pool
+
+    index.refresh(force=True)
+    pool.tasks.pop(0).run()
+    assert [entry.name for entry in index.entries] == ["first"]
+
+    touch(tmp_path, "second.lnk")
+    index.refresh()
+    assert pool.tasks == []
+
+    index.refresh(force=True)
+    assert len(pool.tasks) == 1
+    pool.tasks.pop(0).run()
+    assert {entry.name for entry in index.entries} == {"first", "second"}
+
+
+def test_forced_refresh_during_scan_runs_again_after_finish(
+    tmp_path: Path,
+    qapp,
+) -> None:
+    touch(tmp_path, "first.lnk")
+    index = LinkIndex([tmp_path], max_depth=5, throttle_seconds=3600)
+    pool = QueuedThreadPool()
+    index._thread_pool = pool
+
+    index.refresh(force=True)
+    index.refresh(force=True)
+    assert len(pool.tasks) == 1
+
+    pool.tasks.pop(0).run()
+    assert [entry.name for entry in index.entries] == ["first"]
+    assert len(pool.tasks) == 1
+    assert index.scanning
+
+    touch(tmp_path, "second.lnk")
+    pool.tasks.pop(0).run()
+    assert not index.scanning
+    assert {entry.name for entry in index.entries} == {"first", "second"}

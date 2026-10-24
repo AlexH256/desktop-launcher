@@ -4,6 +4,11 @@ from desktop_launcher.core.config import (
     DEFAULT_AUTOSTART,
     DEFAULT_HOTKEY,
     DEFAULT_MAX_DEPTH,
+    DEFAULT_ROW_HEIGHT,
+    DEFAULT_SEARCH_HEIGHT,
+    DEFAULT_WINDOW_PLACEHOLDER,
+    DEFAULT_WINDOW_WIDTH,
+    WindowConfig,
     load_config,
 )
 
@@ -21,9 +26,15 @@ def test_creates_default_config(tmp_path: Path) -> None:
     assert config_path.exists()
     assert result.config.hotkey.text == DEFAULT_HOTKEY
     assert result.config.autostart is True
+    assert result.config.window.width == DEFAULT_WINDOW_WIDTH
+    assert result.config.window.search_height == DEFAULT_SEARCH_HEIGHT
+    assert result.config.window.row_height == DEFAULT_ROW_HEIGHT
+    assert result.config.window.placeholder == DEFAULT_WINDOW_PLACEHOLDER
     assert result.config.search.max_depth == DEFAULT_MAX_DEPTH
     assert len(result.config.search.paths) >= 1
-    assert "autostart = true" in config_path.read_text(encoding="utf-8")
+    text = config_path.read_text(encoding="utf-8")
+    assert "autostart = true" in text
+    assert "[window]" in text
     assert result.warnings == ()
 
 
@@ -33,6 +44,12 @@ def test_loads_custom_values(tmp_path: Path) -> None:
         config_path,
         'hotkey = "Ctrl+Shift+K"\n'
         "autostart = false\n"
+        "\n"
+        "[window]\n"
+        "width = 640\n"
+        "search_height = 50\n"
+        "row_height = 42\n"
+        'placeholder = "查找应用"\n'
         "\n"
         "[search]\n"
         "paths = []\n"
@@ -44,6 +61,12 @@ def test_loads_custom_values(tmp_path: Path) -> None:
     assert not result.created
     assert result.config.hotkey.text == "Ctrl+Shift+K"
     assert result.config.autostart is False
+    assert result.config.window == WindowConfig(
+        width=640,
+        search_height=50,
+        row_height=42,
+        placeholder="查找应用",
+    )
     assert result.config.search.paths == ()
     assert result.config.search.max_depth == 2
 
@@ -55,6 +78,40 @@ def test_missing_autostart_defaults_to_true(tmp_path: Path) -> None:
     result = load_config(config_path)
 
     assert result.config.autostart is DEFAULT_AUTOSTART
+
+
+def test_missing_window_defaults_to_current_values(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    write_config(config_path, 'hotkey = "Alt+Space"\n[search]\npaths = []\n')
+
+    result = load_config(config_path)
+
+    assert result.config.window == WindowConfig()
+    assert result.config.window.width == DEFAULT_WINDOW_WIDTH
+    assert result.config.window.search_height == DEFAULT_SEARCH_HEIGHT
+    assert result.config.window.row_height == DEFAULT_ROW_HEIGHT
+    assert result.config.window.placeholder == DEFAULT_WINDOW_PLACEHOLDER
+
+
+def test_invalid_window_values_fall_back(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    write_config(
+        config_path,
+        'hotkey = "Alt+Space"\n'
+        "[window]\n"
+        "width = 0\n"
+        'search_height = "44"\n'
+        "row_height = true\n"
+        "placeholder = 3\n",
+    )
+
+    result = load_config(config_path)
+
+    assert result.config.window == WindowConfig()
+    assert any("window.width" in warning for warning in result.warnings)
+    assert any("window.search_height" in warning for warning in result.warnings)
+    assert any("window.row_height" in warning for warning in result.warnings)
+    assert any("window.placeholder" in warning for warning in result.warnings)
 
 
 def test_invalid_autostart_falls_back_to_true(tmp_path: Path) -> None:
@@ -155,6 +212,8 @@ def test_unknown_keys_warn(tmp_path: Path) -> None:
         config_path,
         'hotkey = "Alt+Space"\n'
         "unknown = 1\n"
+        "[window]\n"
+        "unknown_window = 3\n"
         "[search]\n"
         "paths = []\n"
         "unknown_search = 2\n",
@@ -163,6 +222,7 @@ def test_unknown_keys_warn(tmp_path: Path) -> None:
     result = load_config(config_path)
 
     assert any("unknown" in warning for warning in result.warnings)
+    assert any("unknown_window" in warning for warning in result.warnings)
     assert any("unknown_search" in warning for warning in result.warnings)
 
 

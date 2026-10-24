@@ -132,7 +132,7 @@ def main() -> int:
     store = SearchConfigStore()
     store.load()
 
-    window = LauncherWindow(style.stylesheet)
+    window = LauncherWindow(style.stylesheet, window_config=config.window)
     window.set_search_config(store.snapshot())
     launch_controller = LaunchController(window, store, parent=app)
     index = LinkIndex(
@@ -144,7 +144,7 @@ def main() -> int:
 
     def show_launcher() -> None:
         window.show_and_focus()
-        index.refresh()
+        index.refresh(force=True)
 
     visibility_dialog: VisibilityDialog | None = None
 
