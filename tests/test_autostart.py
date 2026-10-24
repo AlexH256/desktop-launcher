@@ -1,6 +1,8 @@
 import subprocess
+import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 from desktop_launcher.core import autostart as autostart_module
@@ -24,6 +26,40 @@ def test_frozen_action_uses_executable(tmp_path: Path) -> None:
     executable = tmp_path / "Desktop Launcher.exe"
 
     command, arguments = build_autostart_action(executable, frozen=True)
+
+    assert command == str(executable.resolve())
+    assert arguments == ""
+
+
+def test_nuitka_action_uses_process_exe(tmp_path: Path, monkeypatch) -> None:
+    executable = tmp_path / "desktop_launcher.exe"
+    monkeypatch.setattr(sys, "executable", str(tmp_path / "python.exe"))
+    monkeypatch.setitem(
+        autostart_module.__dict__,
+        "__compiled__",
+        SimpleNamespace(process_exe=str(executable)),
+    )
+
+    command, arguments = build_autostart_action()
+
+    assert command == str(executable.resolve())
+    assert arguments == ""
+
+
+def test_nuitka_action_falls_back_to_argv0(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    executable = tmp_path / "desktop_launcher.exe"
+    monkeypatch.setattr(sys, "executable", str(tmp_path / "python.exe"))
+    monkeypatch.setattr(sys, "argv", [str(executable)])
+    monkeypatch.setitem(
+        autostart_module.__dict__,
+        "__compiled__",
+        SimpleNamespace(),
+    )
+
+    command, arguments = build_autostart_action()
 
     assert command == str(executable.resolve())
     assert arguments == ""

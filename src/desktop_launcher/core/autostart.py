@@ -18,18 +18,39 @@ def _tag(name: str) -> str:
     return f"{{{TASK_NAMESPACE}}}{name}"
 
 
+def _nuitka_executable() -> Path | None:
+    compiled = globals().get("__compiled__")
+    if compiled is None:
+        return None
+
+    process_exe = getattr(compiled, "process_exe", None)
+    if process_exe:
+        return Path(str(process_exe))
+
+    if sys.argv and sys.argv[0]:
+        return Path(sys.argv[0])
+
+    return None
+
+
 def build_autostart_action(
     executable: Path | None = None,
     frozen: bool | None = None,
 ) -> tuple[str, str]:
-    executable_path = Path(executable or sys.executable).expanduser()
+    if frozen is None:
+        frozen = bool(getattr(sys, "frozen", False)) or "__compiled__" in globals()
+
+    if executable is None:
+        if frozen:
+            executable = _nuitka_executable() or sys.executable
+        else:
+            executable = sys.executable
+
+    executable_path = Path(executable).expanduser()
     try:
         executable_path = executable_path.resolve(strict=False)
     except OSError:
         executable_path = executable_path.absolute()
-
-    if frozen is None:
-        frozen = bool(getattr(sys, "frozen", False)) or "__compiled__" in globals()
 
     if frozen:
         return str(executable_path), ""
