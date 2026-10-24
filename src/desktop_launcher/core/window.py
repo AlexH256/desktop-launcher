@@ -1,7 +1,7 @@
 import ctypes
 from collections.abc import Mapping, Sequence
 
-from PySide6.QtCore import QEvent, QModelIndex, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QColor,
     QCursor,
@@ -18,13 +18,12 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
-    QStyledItemDelegate,
-    QStyleOptionViewItem,
     QVBoxLayout,
     QWidget,
 )
 
 from desktop_launcher.core.icons import LinkIconProvider
+from desktop_launcher.core.item_delegate import AppEntryItemDelegate
 from desktop_launcher.core.search import AppEntry, filter_entries
 from desktop_launcher.core.search_config import SearchRecord, weight_key
 from desktop_launcher.core.style import DEFAULT_STYLESHEET
@@ -35,36 +34,6 @@ ROW_HEIGHT = 38
 MAX_VISIBLE_ROWS = 8
 STATUS_HEIGHT = 26
 ICON_SIZE = 20
-
-
-class _LauncherItemDelegate(QStyledItemDelegate):
-    def __init__(
-        self,
-        icon_provider: LinkIconProvider,
-        parent: QWidget | None = None,
-    ) -> None:
-        super().__init__(parent)
-        self._icon_provider = icon_provider
-
-    def initStyleOption(
-        self,
-        option: QStyleOptionViewItem,
-        index: QModelIndex,
-    ) -> None:
-        super().initStyleOption(option, index)
-        entry = index.data(Qt.ItemDataRole.UserRole)
-        if isinstance(entry, AppEntry):
-            option.icon = self._icon_provider.icon_for(entry.path)
-            option.features |= QStyleOptionViewItem.ViewItemFeature.HasDecoration
-            option.decorationSize = QSize(ICON_SIZE, ICON_SIZE)
-
-    def sizeHint(
-        self,
-        option: QStyleOptionViewItem,
-        index: QModelIndex,
-    ) -> QSize:
-        return QSize(0, ROW_HEIGHT)
-
 
 
 class LauncherWindow(QWidget):
@@ -132,8 +101,10 @@ class LauncherWindow(QWidget):
         self._result_list.setMouseTracking(True)
         self._result_list.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
         self._icon_provider = LinkIconProvider()
-        self._item_delegate = _LauncherItemDelegate(
+        self._item_delegate = AppEntryItemDelegate(
             self._icon_provider,
+            ROW_HEIGHT,
+            ICON_SIZE,
             self._result_list,
         )
         self._result_list.setItemDelegate(self._item_delegate)

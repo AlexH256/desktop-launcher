@@ -16,6 +16,7 @@ from desktop_launcher.core.hotkey import GlobalHotkey
 from desktop_launcher.core.search import AppEntry, LinkIndex
 from desktop_launcher.core.search_config import SearchConfigStore
 from desktop_launcher.core.style import load_stylesheet
+from desktop_launcher.core.visibility import VisibilityDialog
 from desktop_launcher.core.window import LauncherWindow
 
 
@@ -50,6 +51,7 @@ def _create_tray_icon(
     window: LauncherWindow,
     app: QApplication,
     show_launcher: Callable[[], None],
+    show_visibility: Callable[[], None],
 ) -> QSystemTrayIcon:
     icon = app.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon)
     tray = QSystemTrayIcon(icon, app)
@@ -58,9 +60,12 @@ def _create_tray_icon(
     menu = QMenu(window)
     show_action = QAction("显示", menu)
     show_action.triggered.connect(lambda: show_launcher())
+    visibility_action = QAction("可见性配置", menu)
+    visibility_action.triggered.connect(lambda: show_visibility())
     quit_action = QAction("退出", menu)
     quit_action.triggered.connect(app.quit)
     menu.addAction(show_action)
+    menu.addAction(visibility_action)
     menu.addSeparator()
     menu.addAction(quit_action)
 
@@ -99,6 +104,31 @@ def main() -> int:
         window.show_and_focus()
         index.refresh()
 
+    visibility_dialog: VisibilityDialog | None = None
+
+    def show_visibility() -> None:
+        nonlocal visibility_dialog
+        if visibility_dialog is not None:
+            visibility_dialog.show()
+            visibility_dialog.raise_()
+            visibility_dialog.activateWindow()
+            return
+
+        dialog = VisibilityDialog(index.entries, store)
+        dialog.changed.connect(
+            lambda: window.set_search_config(store.snapshot())
+        )
+
+        def clear_dialog(*_args) -> None:
+            nonlocal visibility_dialog
+            visibility_dialog = None
+
+        dialog.finished.connect(clear_dialog)
+        visibility_dialog = dialog
+        dialog.show()
+        dialog.raise_()
+        dialog.activateWindow()
+
     hotkey.activated.connect(show_launcher)
     window.entryActivated.connect(
         lambda entry: _activate_entry(window, entry, store)
@@ -114,7 +144,7 @@ def main() -> int:
     for notice in notices:
         print(notice, file=sys.stderr)
 
-    tray = _create_tray_icon(window, app, show_launcher)
+    tray = _create_tray_icon(window, app, show_launcher, show_visibility)
 
     def on_scan_started() -> None:
         window.set_scanning(True)

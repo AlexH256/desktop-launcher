@@ -1,7 +1,7 @@
 import json
 import os
 import tempfile
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -128,6 +128,31 @@ class SearchConfigStore:
             visible=current.visible,
         )
         return self._save()
+
+    def set_visible(self, path: Path, visible: bool) -> bool:
+        return self.set_visibility({weight_key(path): visible})
+
+    def set_visibility(self, changes: Mapping[str, bool]) -> bool:
+        if not changes:
+            return True
+
+        previous = {key: self._entries.get(key) for key in changes}
+        for key, visible in changes.items():
+            current = self._entries.get(key, SearchRecord())
+            self._entries[key] = SearchRecord(
+                weight=current.weight,
+                visible=visible,
+            )
+
+        if self._save():
+            return True
+
+        for key, record in previous.items():
+            if record is None:
+                self._entries.pop(key, None)
+            else:
+                self._entries[key] = record
+        return False
 
     def sync_entries(
         self,
