@@ -8,7 +8,7 @@ from desktop_launcher.core.search import (
     scan_links,
     subsequence_match,
 )
-from desktop_launcher.core.weights import weight_key
+from desktop_launcher.core.search_config import weight_key
 
 
 @pytest.mark.parametrize(

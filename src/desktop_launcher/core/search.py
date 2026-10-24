@@ -8,7 +8,7 @@ from typing import cast
 
 from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal
 
-from desktop_launcher.core.weights import weight_key
+from desktop_launcher.core.search_config import weight_key
 
 REFRESH_THROTTLE_SECONDS = 10.0
 

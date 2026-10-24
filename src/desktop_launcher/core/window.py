@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 
 from desktop_launcher.core.icons import LinkIconProvider
 from desktop_launcher.core.search import AppEntry, filter_entries
+from desktop_launcher.core.search_config import SearchRecord, weight_key
 from desktop_launcher.core.style import DEFAULT_STYLESHEET
 
 WINDOW_WIDTH = 720
@@ -73,6 +74,7 @@ class LauncherWindow(QWidget):
         super().__init__()
         self._entries: tuple[AppEntry, ...] = ()
         self._weights: dict[str, int] = {}
+        self._hidden: set[str] = set()
         self._scanning = False
         self._error = ""
 
@@ -160,8 +162,13 @@ class LauncherWindow(QWidget):
         self._error = ""
         self._apply_filter()
 
-    def set_weights(self, weights: Mapping[str, int]) -> None:
-        self._weights = dict(weights)
+    def set_search_config(self, records: Mapping[str, SearchRecord]) -> None:
+        self._weights = {
+            key: record.weight for key, record in records.items()
+        }
+        self._hidden = {
+            key for key, record in records.items() if not record.visible
+        }
         self._apply_filter()
 
     def set_scanning(self, scanning: bool) -> None:
@@ -236,8 +243,13 @@ class LauncherWindow(QWidget):
             self.entryActivated.emit(entry)
 
     def _apply_filter(self) -> None:
+        visible_entries = tuple(
+            entry
+            for entry in self._entries
+            if weight_key(entry.path) not in self._hidden
+        )
         filtered = filter_entries(
-            self._entries,
+            visible_entries,
             self.search_input.text(),
             self._weights,
         )
@@ -260,16 +272,20 @@ class LauncherWindow(QWidget):
         else:
             self._result_list.setFixedHeight(0)
             self._result_list.hide()
-            self._status_label.setText(self._empty_message())
+            self._status_label.setText(self._empty_message(visible_entries))
             self._status_label.show()
 
         self._resize_to_results()
 
-    def _empty_message(self) -> str:
+    def _empty_message(self, visible_entries: Sequence[AppEntry]) -> str:
         if self._error:
             return "扫描快捷方式失败"
         if self._scanning:
             return "正在扫描快捷方式…"
+        if not self._entries:
+            return "未找到 .lnk 快捷方式，请检查搜索路径"
+        if not visible_entries:
+            return "没有可见的快捷方式"
         if self.search_input.text().strip():
             return "无匹配结果"
         return "未找到 .lnk 快捷方式，请检查搜索路径"

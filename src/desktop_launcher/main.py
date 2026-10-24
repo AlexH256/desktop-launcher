@@ -14,8 +14,8 @@ from PySide6.QtWidgets import (
 from desktop_launcher.core.config import load_config
 from desktop_launcher.core.hotkey import GlobalHotkey
 from desktop_launcher.core.search import AppEntry, LinkIndex
+from desktop_launcher.core.search_config import SearchConfigStore
 from desktop_launcher.core.style import load_stylesheet
-from desktop_launcher.core.weights import WeightStore
 from desktop_launcher.core.window import LauncherWindow
 
 
@@ -36,14 +36,14 @@ def _launch_entry(window: LauncherWindow, entry: AppEntry) -> bool:
 def _activate_entry(
     window: LauncherWindow,
     entry: AppEntry,
-    weights: WeightStore,
+    store: SearchConfigStore,
 ) -> None:
     if not _launch_entry(window, entry):
         return
-    if not weights.record_launch(entry.path):
-        detail = weights.warnings[-1] if weights.warnings else "未知错误"
+    if not store.record_launch(entry.path):
+        detail = store.warnings[-1] if store.warnings else "未知错误"
         print(detail, file=sys.stderr)
-    window.set_weights(weights.snapshot())
+    window.set_search_config(store.snapshot())
 
 
 def _create_tray_icon(
@@ -83,11 +83,11 @@ def main() -> int:
     config = result.config
     style = load_stylesheet()
 
-    weights = WeightStore()
-    weights.load()
+    store = SearchConfigStore()
+    store.load()
 
     window = LauncherWindow(style.stylesheet)
-    window.set_weights(weights.snapshot())
+    window.set_search_config(store.snapshot())
     index = LinkIndex(
         config.search.paths,
         config.search.max_depth,
@@ -101,12 +101,12 @@ def main() -> int:
 
     hotkey.activated.connect(show_launcher)
     window.entryActivated.connect(
-        lambda entry: _activate_entry(window, entry, weights)
+        lambda entry: _activate_entry(window, entry, store)
     )
 
     registered = hotkey.register()
 
-    notices = list(result.warnings) + list(style.warnings) + list(weights.warnings)
+    notices = list(result.warnings) + list(style.warnings) + list(store.warnings)
     if not registered:
         notices.append(
             f"全局快捷键 {config.hotkey.text} 注册失败，可能已被其他程序占用"
@@ -120,14 +120,15 @@ def main() -> int:
         window.set_scanning(True)
 
     def on_scan_updated(entries) -> None:
-        window.set_entries(entries)
-        warning_count = len(weights.warnings)
-        if weights.cleanup_missing(
+        warning_count = len(store.warnings)
+        changed = store.sync_entries(
             (entry.path for entry in entries),
             config.search.paths,
-        ):
-            window.set_weights(weights.snapshot())
-        for warning in weights.warnings[warning_count:]:
+        )
+        if changed:
+            window.set_search_config(store.snapshot())
+        window.set_entries(entries)
+        for warning in store.warnings[warning_count:]:
             print(warning, file=sys.stderr)
 
     def on_scan_failed(message: str) -> None:

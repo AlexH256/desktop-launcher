@@ -2,18 +2,19 @@ import json
 import os
 import tempfile
 from collections.abc import Iterable
+from dataclasses import dataclass
 from pathlib import Path
 
 from desktop_launcher.core.config import APP_DIR_NAME
 
-WEIGHTS_FILE_NAME = "weights.json"
-WEIGHTS_VERSION = 1
+SEARCH_CONFIG_FILE_NAME = "search-config.json"
+SEARCH_CONFIG_VERSION = 2
 
 
-def default_weights_path() -> Path:
+def default_search_config_path() -> Path:
     appdata = os.environ.get("APPDATA")
     base = Path(appdata) if appdata else Path.home() / "AppData" / "Roaming"
-    return base / APP_DIR_NAME / WEIGHTS_FILE_NAME
+    return base / APP_DIR_NAME / SEARCH_CONFIG_FILE_NAME
 
 
 def weight_key(path: Path | str) -> str:
@@ -27,10 +28,16 @@ def _is_under(path: str, root: str) -> bool:
         return False
 
 
-class WeightStore:
+@dataclass(frozen=True, slots=True)
+class SearchRecord:
+    weight: int = 0
+    visible: bool = True
+
+
+class SearchConfigStore:
     def __init__(self, path: Path | None = None) -> None:
-        self._path = (path or default_weights_path()).expanduser()
-        self._weights: dict[str, int] = {}
+        self._path = (path or default_search_config_path()).expanduser()
+        self._entries: dict[str, SearchRecord] = {}
         self._warnings: list[str] = []
 
     @property
@@ -43,71 +50,98 @@ class WeightStore:
 
     def load(self) -> None:
         self._warnings.clear()
-        self._weights = {}
+        self._entries = {}
         if not self._path.exists():
             return
 
         try:
             raw = json.loads(self._path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
-            self._warnings.append(f"读取权重文件失败，已使用空权重：{exc}")
+            self._warnings.append(f"读取搜索配置文件失败，已使用空配置：{exc}")
             return
 
         if not isinstance(raw, dict):
-            self._warnings.append("权重文件格式无效，已使用空权重")
+            self._warnings.append("搜索配置文件格式无效，已使用空配置")
             return
 
         version = raw.get("version")
         if (
             isinstance(version, bool)
             or not isinstance(version, int)
-            or version != WEIGHTS_VERSION
+            or version != SEARCH_CONFIG_VERSION
         ):
-            self._warnings.append(f"权重文件版本不支持：{version}，已使用空权重")
+            self._warnings.append(
+                f"搜索配置文件版本不支持：{version}，已使用空配置"
+            )
             return
 
-        raw_weights = raw.get("weights")
-        if not isinstance(raw_weights, dict):
-            self._warnings.append("权重文件缺少 weights 表，已使用空权重")
+        raw_entries = raw.get("entries")
+        if not isinstance(raw_entries, dict):
+            self._warnings.append("搜索配置文件缺少 entries 表，已使用空配置")
             return
 
-        weights: dict[str, int] = {}
-        for raw_key, raw_value in raw_weights.items():
+        entries: dict[str, SearchRecord] = {}
+        for raw_key, raw_value in raw_entries.items():
             if not isinstance(raw_key, str) or not raw_key:
-                self._warnings.append("权重文件包含无效路径，已忽略")
+                self._warnings.append("搜索配置文件包含无效路径，已忽略")
                 continue
+            if not isinstance(raw_value, dict):
+                self._warnings.append(f"条目格式无效，已忽略：{raw_key}")
+                continue
+
+            raw_weight = raw_value.get("weight", 0)
+            raw_visible = raw_value.get("visible", True)
             if (
-                isinstance(raw_value, bool)
-                or not isinstance(raw_value, int)
-                or raw_value < 0
+                isinstance(raw_weight, bool)
+                or not isinstance(raw_weight, int)
+                or raw_weight < 0
             ):
                 self._warnings.append(f"权重值无效，已忽略：{raw_key}")
                 continue
+            if not isinstance(raw_visible, bool):
+                self._warnings.append(f"visible 值无效，已忽略：{raw_key}")
+                continue
 
-            key = weight_key(raw_key)
-            previous = weights.get(key)
-            if previous is None or raw_value > previous:
-                weights[key] = raw_value
+            entries[weight_key(raw_key)] = SearchRecord(
+                weight=raw_weight,
+                visible=raw_visible,
+            )
 
-        self._weights = weights
+        self._entries = entries
 
     def weight_for(self, path: Path) -> int:
-        return self._weights.get(weight_key(path), 0)
+        record = self._entries.get(weight_key(path))
+        return record.weight if record is not None else 0
 
-    def snapshot(self) -> dict[str, int]:
-        return dict(self._weights)
+    def is_visible(self, path: Path) -> bool:
+        record = self._entries.get(weight_key(path))
+        return record.visible if record is not None else True
+
+    def snapshot(self) -> dict[str, SearchRecord]:
+        return dict(self._entries)
 
     def record_launch(self, path: Path) -> bool:
         key = weight_key(path)
-        self._weights[key] = self._weights.get(key, 0) + 1
+        current = self._entries.get(key, SearchRecord())
+        self._entries[key] = SearchRecord(
+            weight=current.weight + 1,
+            visible=current.visible,
+        )
         return self._save()
 
-    def cleanup_missing(
+    def sync_entries(
         self,
         discovered_paths: Iterable[Path],
         search_roots: Iterable[Path],
     ) -> bool:
         discovered = {weight_key(path) for path in discovered_paths}
+        changed = False
+
+        for key in discovered:
+            if key not in self._entries:
+                self._entries[key] = SearchRecord()
+                changed = True
+
         accessible_roots: list[str] = []
         for root in search_roots:
             root_key = weight_key(root)
@@ -117,8 +151,7 @@ class WeightStore:
             except (OSError, ValueError):
                 continue
 
-        removed = False
-        for key in list(self._weights):
+        for key in list(self._entries):
             if key in discovered:
                 continue
             path = Path(key)
@@ -129,17 +162,23 @@ class WeightStore:
                 continue
             if not any(_is_under(key, root) for root in accessible_roots):
                 continue
-            del self._weights[key]
-            removed = True
+            del self._entries[key]
+            changed = True
 
-        if removed:
+        if changed:
             self._save()
-        return removed
+        return changed
 
     def _save(self) -> bool:
         payload = {
-            "version": WEIGHTS_VERSION,
-            "weights": self._weights,
+            "version": SEARCH_CONFIG_VERSION,
+            "entries": {
+                key: {
+                    "weight": record.weight,
+                    "visible": record.visible,
+                }
+                for key, record in self._entries.items()
+            },
         }
         temporary_path: Path | None = None
 
@@ -165,7 +204,7 @@ class WeightStore:
                     temporary_path.unlink(missing_ok=True)
                 except OSError:
                     pass
-            self._warnings.append(f"保存权重文件失败：{exc}")
+            self._warnings.append(f"保存搜索配置文件失败：{exc}")
             return False
 
         return True

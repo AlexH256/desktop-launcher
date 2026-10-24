@@ -6,8 +6,8 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QStyleOptionViewItem
 
 from desktop_launcher.core.search import AppEntry
+from desktop_launcher.core.search_config import SearchRecord, weight_key
 from desktop_launcher.core.window import ICON_SIZE, LauncherWindow
-from desktop_launcher.core.weights import weight_key
 
 ENTRIES = (
     AppEntry("Alpha", Path("alpha.lnk")),
@@ -101,8 +101,10 @@ def test_items_show_icons(window) -> None:
     assert option.decorationSize == QSize(ICON_SIZE, ICON_SIZE)
 
 
-def test_set_weights_reorders_items(window) -> None:
-    window.set_weights({weight_key(ENTRIES[2].path): 5})
+def test_set_search_config_reorders_items(window) -> None:
+    window.set_search_config(
+        {weight_key(ENTRIES[2].path): SearchRecord(weight=5)}
+    )
 
     names = [
         window._result_list.item(index).text()
@@ -113,10 +115,10 @@ def test_set_weights_reorders_items(window) -> None:
 
 
 def test_equal_weights_sort_by_name(window) -> None:
-    window.set_weights(
+    window.set_search_config(
         {
-            weight_key(ENTRIES[0].path): 2,
-            weight_key(ENTRIES[1].path): 2,
+            weight_key(ENTRIES[0].path): SearchRecord(weight=2),
+            weight_key(ENTRIES[1].path): SearchRecord(weight=2),
         }
     )
 
@@ -126,6 +128,43 @@ def test_equal_weights_sort_by_name(window) -> None:
     ]
 
     assert names == ["Alpha", "Beta", "Gamma"]
+
+
+def test_hidden_entries_are_not_listed(window) -> None:
+    window.set_search_config(
+        {weight_key(ENTRIES[1].path): SearchRecord(visible=False)}
+    )
+
+    names = [
+        window._result_list.item(index).text()
+        for index in range(window._result_list.count())
+    ]
+
+    assert names == ["Alpha", "Gamma"]
+
+
+def test_hidden_entries_are_not_searchable(window) -> None:
+    window.set_search_config(
+        {weight_key(ENTRIES[1].path): SearchRecord(visible=False)}
+    )
+    window.search_input.setText("beta")
+    QTest.qWait(10)
+
+    assert window._result_list.count() == 0
+    assert window._status_label.text() == "无匹配结果"
+
+
+def test_all_hidden_entries_show_status(window) -> None:
+    window.set_search_config(
+        {
+            weight_key(entry.path): SearchRecord(visible=False)
+            for entry in ENTRIES
+        }
+    )
+
+    assert window._result_list.count() == 0
+    assert window._status_label.isVisible()
+    assert window._status_label.text() == "没有可见的快捷方式"
 
 
 def test_custom_stylesheet_is_applied(qapp) -> None:
