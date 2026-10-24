@@ -1,6 +1,6 @@
 本文件指导opencode AGENT进行项目编写
 
-```
+```Shell
 uv add <PACKAGES> #添加依赖
 uv run <FILE> #运行文件
 uv run python -m desktop_launcher #运行项目
@@ -18,3 +18,9 @@ main.py 主逻辑
 项目功能：
 在Windows下运行
 使用全局快捷键呼出悬浮窗口并聚焦，窗口具有搜索栏，输入关键字，从指定路径下的lnk文件匹配文件名，选中，启动程序
+
+编译：
+
+```Shell
+uv run python -m nuitka --mode=standalone --zig --python-flag=-m --include-package=desktop_launcher --output-dir=dist --remove-output --enable-plugin=pyside6 src/desktop_launcher
+```
