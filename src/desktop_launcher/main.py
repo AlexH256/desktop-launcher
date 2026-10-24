@@ -2,15 +2,15 @@ import os
 import sys
 from collections.abc import Callable
 
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QIcon
 from PySide6.QtWidgets import (
     QApplication,
     QMenu,
     QMessageBox,
-    QStyle,
     QSystemTrayIcon,
 )
 
+from desktop_launcher.core.app_icon import load_app_icon
 from desktop_launcher.core.config import load_config
 from desktop_launcher.core.hotkey import GlobalHotkey
 from desktop_launcher.core.search import AppEntry, LinkIndex
@@ -50,10 +50,10 @@ def _activate_entry(
 def _create_tray_icon(
     window: LauncherWindow,
     app: QApplication,
+    icon: QIcon,
     show_launcher: Callable[[], None],
     show_visibility: Callable[[], None],
 ) -> QSystemTrayIcon:
-    icon = app.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon)
     tray = QSystemTrayIcon(icon, app)
     tray.setToolTip("Desktop Launcher")
 
@@ -87,6 +87,7 @@ def main() -> int:
     result = load_config()
     config = result.config
     style = load_stylesheet()
+    app_icon = load_app_icon()
 
     store = SearchConfigStore()
     store.load()
@@ -114,7 +115,11 @@ def main() -> int:
             visibility_dialog.activateWindow()
             return
 
-        dialog = VisibilityDialog(index.entries, store)
+        dialog = VisibilityDialog(
+            index.entries,
+            store,
+            window_icon=app_icon,
+        )
         dialog.changed.connect(
             lambda: window.set_search_config(store.snapshot())
         )
@@ -144,7 +149,13 @@ def main() -> int:
     for notice in notices:
         print(notice, file=sys.stderr)
 
-    tray = _create_tray_icon(window, app, show_launcher, show_visibility)
+    tray = _create_tray_icon(
+        window,
+        app,
+        app_icon,
+        show_launcher,
+        show_visibility,
+    )
 
     def on_scan_started() -> None:
         window.set_scanning(True)

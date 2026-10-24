@@ -1,6 +1,7 @@
 from collections.abc import Mapping, Sequence
 
 from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QDialog,
@@ -35,11 +36,15 @@ class VisibilityDialog(QDialog):
         self,
         entries: Sequence[AppEntry],
         store: SearchConfigStore,
+        window_icon: QIcon | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self._store = store
         self._updating = False
+
+        if window_icon is not None:
+            self.setWindowIcon(window_icon)
 
         self.setWindowTitle("可见性配置 - Desktop Launcher")
         self.resize(680, 600)

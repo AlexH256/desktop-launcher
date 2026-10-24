@@ -4,7 +4,7 @@ from unittest.mock import Mock
 import pytest
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QListWidgetItem, QStyleOptionViewItem
+from PySide6.QtWidgets import QListWidgetItem, QStyle, QStyleOptionViewItem
 
 from desktop_launcher.core import visibility as visibility_module
 from desktop_launcher.core.search import AppEntry
@@ -157,3 +157,13 @@ def test_clicking_checkbox_still_toggles(
 
     assert item.checkState() == Qt.CheckState.Unchecked
     assert store.is_visible(ENTRIES[2].path) is False
+
+
+def test_uses_provided_window_icon(qapp, store: SearchConfigStore) -> None:
+    icon = qapp.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon)
+    dialog = VisibilityDialog(ENTRIES, store, window_icon=icon)
+
+    assert dialog.windowIcon().cacheKey() == icon.cacheKey()
+
+    dialog.close()
+    QTest.qWait(10)
