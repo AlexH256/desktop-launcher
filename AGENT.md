@@ -22,7 +22,7 @@ main.py 主逻辑
 编译：
 
 ```Shell
-uv run python -m nuitka --mode=standalone --zig --python-flag=-m --include-package=desktop_launcher --output-dir=dist --remove-output --enable-plugin=pyside6 --windows-console-mode=disable src/desktop_launcher
+uv run python -m nuitka --mode=standalone --zig --python-flag=-m --include-package=desktop_launcher --output-dir=dist --remove-output --enable-plugin=pyside6 --include-data-dir=assets=assets --windows-icon-from-ico=assets/icon.ico --windows-console-mode=disable src/desktop_launcher
 ```
 
 请在每次更新完源代码后询问用户是否需要编译
