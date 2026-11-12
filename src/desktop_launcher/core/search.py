@@ -59,8 +59,10 @@ def filter_entries(
     entries: Sequence[AppEntry],
     query: str,
     weights: Mapping[str, int] | None = None,
+    aliases: Mapping[str, str] | None = None,
 ) -> tuple[AppEntry, ...]:
     weight_map = weights or {}
+    alias_map = aliases or {}
     needle = _compact(query)
     if not needle:
         return tuple(
@@ -76,14 +78,20 @@ def filter_entries(
 
     matches: list[tuple[int, int, str, str, AppEntry]] = []
     for entry in entries:
+        key = weight_key(entry.path)
         haystack = _compact(entry.name)
         rank = _match_rank(needle, haystack)
+        alias = alias_map.get(key, "")
+        if alias:
+            alias_rank = _match_rank(needle, _compact(alias))
+            if alias_rank is not None and (rank is None or alias_rank < rank):
+                rank = alias_rank
         if rank is None:
             continue
         matches.append(
             (
                 rank,
-                -weight_map.get(weight_key(entry.path), 0),
+                -weight_map.get(key, 0),
                 haystack,
                 os.path.normcase(str(entry.path)),
                 entry,

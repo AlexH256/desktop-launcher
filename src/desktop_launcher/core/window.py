@@ -47,6 +47,7 @@ class LauncherWindow(QWidget):
         self._row_height = config.row_height
         self._entries: tuple[AppEntry, ...] = ()
         self._weights: dict[str, int] = {}
+        self._aliases: dict[str, str] = {}
         self._hidden: set[str] = set()
         self._scanning = False
         self._error = ""
@@ -141,6 +142,9 @@ class LauncherWindow(QWidget):
         self._weights = {
             key: record.weight for key, record in records.items()
         }
+        self._aliases = {
+            key: record.alias for key, record in records.items() if record.alias
+        }
         self._hidden = {
             key for key, record in records.items() if not record.visible
         }
@@ -227,6 +231,7 @@ class LauncherWindow(QWidget):
             visible_entries,
             self.search_input.text(),
             self._weights,
+            self._aliases,
         )
         self._result_list.clear()
 

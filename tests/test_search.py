@@ -150,6 +150,53 @@ def test_query_same_relevance_and_weight_sorts_by_name() -> None:
     assert [entry.name for entry in result] == ["Code Alpha", "Code Beta"]
 
 
+def test_alias_can_match_when_name_does_not() -> None:
+    entries = (
+        AppEntry("Visual Studio Code", Path("vsc")),
+        AppEntry("Calculator", Path("calc")),
+    )
+    aliases = {weight_key(Path("vsc")): "编辑器"}
+
+    result = filter_entries(entries, "编辑器", aliases=aliases)
+
+    assert [entry.name for entry in result] == ["Visual Studio Code"]
+
+
+def test_alias_match_rank_is_used_for_ordering() -> None:
+    entries = (
+        AppEntry("Code Editor", Path("prefix")),
+        AppEntry("Visual Studio Code", Path("alias")),
+    )
+    aliases = {weight_key(Path("alias")): "editor"}
+
+    result = filter_entries(entries, "editor", aliases=aliases)
+
+    assert [entry.name for entry in result] == [
+        "Visual Studio Code",
+        "Code Editor",
+    ]
+
+
+def test_empty_alias_does_not_match_nonempty_query() -> None:
+    entries = (AppEntry("Calculator", Path("calc")),)
+
+    result = filter_entries(entries, "editor", aliases={weight_key(Path("calc")): ""})
+
+    assert result == ()
+
+
+def test_empty_query_ignores_aliases_for_sorting() -> None:
+    entries = (
+        AppEntry("Alpha", Path("alpha")),
+        AppEntry("Beta", Path("beta")),
+    )
+    aliases = {weight_key(Path("alpha")): "zzz", weight_key(Path("beta")): "aaa"}
+
+    result = filter_entries(entries, "", aliases=aliases)
+
+    assert [entry.name for entry in result] == ["Alpha", "Beta"]
+
+
 def touch(root: Path, relative: str) -> Path:
     path = root / relative
     path.parent.mkdir(parents=True, exist_ok=True)

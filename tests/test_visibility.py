@@ -4,7 +4,12 @@ from unittest.mock import Mock
 import pytest
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QListWidgetItem, QStyle, QStyleOptionViewItem
+from PySide6.QtWidgets import (
+    QLineEdit,
+    QStyle,
+    QStyleOptionViewItem,
+    QTreeWidgetItem,
+)
 
 from desktop_launcher.core import visibility as visibility_module
 from desktop_launcher.core.search import AppEntry
@@ -16,6 +21,7 @@ ENTRIES = (
     AppEntry("Beta", Path("beta.lnk")),
     AppEntry("Gamma", Path("gamma.lnk")),
 )
+ALIAS_SAVE_WAIT_MS = visibility_module.ALIAS_SAVE_DELAY_MS + 50
 
 
 @pytest.fixture
@@ -36,19 +42,45 @@ def dialog(qapp, store: SearchConfigStore):
     QTest.qWait(10)
 
 
-def find_item(dialog: VisibilityDialog, name: str) -> QListWidgetItem:
-    for index in range(dialog._list.count()):
-        item = dialog._list.item(index)
-        if item.text() == name:
+def find_item(dialog: VisibilityDialog, name: str) -> QTreeWidgetItem:
+    for index in range(dialog._tree.topLevelItemCount()):
+        item = dialog._tree.topLevelItem(index)
+        if item.text(0) == name:
             return item
     raise AssertionError(f"item not found: {name}")
 
 
+def alias_edit(dialog: VisibilityDialog, name: str) -> QLineEdit:
+    item = find_item(dialog, name)
+    editor = dialog._tree.itemWidget(item, 1)
+    assert isinstance(editor, QLineEdit)
+    return editor
+
+
 def test_initial_check_states_and_summary(dialog: VisibilityDialog) -> None:
-    assert find_item(dialog, "Alpha").checkState() == Qt.CheckState.Checked
-    assert find_item(dialog, "Beta").checkState() == Qt.CheckState.Unchecked
-    assert find_item(dialog, "Gamma").checkState() == Qt.CheckState.Checked
+    assert find_item(dialog, "Alpha").checkState(0) == Qt.CheckState.Checked
+    assert find_item(dialog, "Beta").checkState(0) == Qt.CheckState.Unchecked
+    assert find_item(dialog, "Gamma").checkState(0) == Qt.CheckState.Checked
     assert dialog._summary_label.text() == "可见 2 / 共 3"
+
+
+def test_initial_aliases_are_empty(dialog: VisibilityDialog) -> None:
+    assert alias_edit(dialog, "Alpha").text() == ""
+    assert alias_edit(dialog, "Beta").text() == ""
+    assert alias_edit(dialog, "Gamma").text() == ""
+
+
+def test_existing_alias_is_shown(qapp, store: SearchConfigStore) -> None:
+    store.set_alias(ENTRIES[0].path, "alpha alias")
+    dialog = VisibilityDialog(ENTRIES, store)
+    dialog.show()
+    QTest.qWait(20)
+
+    assert alias_edit(dialog, "Alpha").text() == "alpha alias"
+    assert alias_edit(dialog, "Beta").text() == ""
+
+    dialog.close()
+    QTest.qWait(10)
 
 
 def test_toggle_updates_store_and_emits_changed(
@@ -59,7 +91,7 @@ def test_toggle_updates_store_and_emits_changed(
     dialog.changed.connect(lambda: changes.append(True))
 
     item = find_item(dialog, "Beta")
-    item.setCheckState(Qt.CheckState.Checked)
+    item.setCheckState(0, Qt.CheckState.Checked)
     QTest.qWait(10)
 
     assert store.is_visible(ENTRIES[1].path) is True
@@ -76,10 +108,10 @@ def test_toggle_failure_reverts_checkbox(
     monkeypatch.setattr(visibility_module.QMessageBox, "warning", warning)
 
     item = find_item(dialog, "Beta")
-    item.setCheckState(Qt.CheckState.Checked)
+    item.setCheckState(0, Qt.CheckState.Checked)
     QTest.qWait(10)
 
-    assert item.checkState() == Qt.CheckState.Unchecked
+    assert item.checkState(0) == Qt.CheckState.Unchecked
     warning.assert_called_once()
 
 
@@ -90,6 +122,60 @@ def test_filter_hides_non_matching_items(dialog: VisibilityDialog) -> None:
     assert not find_item(dialog, "Alpha").isHidden()
     assert find_item(dialog, "Beta").isHidden()
     assert find_item(dialog, "Gamma").isHidden()
+
+
+def test_filter_matches_alias(dialog: VisibilityDialog) -> None:
+    alias_edit(dialog, "Alpha").setText("xyz")
+    QTest.qWait(ALIAS_SAVE_WAIT_MS)
+
+    dialog._filter_input.setText("xyz")
+    QTest.qWait(10)
+
+    assert not find_item(dialog, "Alpha").isHidden()
+    assert find_item(dialog, "Beta").isHidden()
+    assert find_item(dialog, "Gamma").isHidden()
+
+
+def test_alias_edit_is_saved_after_delay(
+    dialog: VisibilityDialog,
+    store: SearchConfigStore,
+) -> None:
+    changes = []
+    dialog.changed.connect(lambda: changes.append(True))
+
+    alias_edit(dialog, "Alpha").setText("  alpha alias  ")
+    QTest.qWait(ALIAS_SAVE_WAIT_MS)
+
+    assert store.alias_for(ENTRIES[0].path) == "alpha alias"
+    assert changes
+
+
+def test_alias_edit_is_saved_on_editing_finished(
+    dialog: VisibilityDialog,
+    store: SearchConfigStore,
+) -> None:
+    editor = alias_edit(dialog, "Alpha")
+    editor.setText("quick")
+    editor.editingFinished.emit()
+
+    assert store.alias_for(ENTRIES[0].path) == "quick"
+
+
+def test_alias_save_failure_reverts_editor(
+    dialog: VisibilityDialog,
+    store: SearchConfigStore,
+    monkeypatch,
+) -> None:
+    warning = Mock()
+    monkeypatch.setattr(store, "set_aliases", lambda changes: False)
+    monkeypatch.setattr(visibility_module.QMessageBox, "warning", warning)
+
+    editor = alias_edit(dialog, "Alpha")
+    editor.setText("bad")
+    QTest.qWait(ALIAS_SAVE_WAIT_MS)
+
+    assert editor.text() == ""
+    warning.assert_called_once()
 
 
 def test_bulk_actions_only_affect_filtered_items(
@@ -115,8 +201,8 @@ def test_bulk_actions_only_affect_filtered_items(
 
 
 def test_items_show_icons(dialog: VisibilityDialog) -> None:
-    delegate = dialog._list.itemDelegate()
-    index = dialog._list.model().index(0, 0)
+    delegate = dialog._tree.itemDelegateForColumn(0)
+    index = dialog._tree.model().index(0, 0)
     option = QStyleOptionViewItem()
 
     delegate.initStyleOption(option, index)
@@ -127,17 +213,17 @@ def test_items_show_icons(dialog: VisibilityDialog) -> None:
 
 def test_clicking_item_text_does_not_select(dialog: VisibilityDialog) -> None:
     item = find_item(dialog, "Alpha")
-    rect = dialog._list.visualItemRect(item)
+    rect = dialog._tree.visualItemRect(item)
 
     QTest.mouseClick(
-        dialog._list.viewport(),
+        dialog._tree.viewport(),
         Qt.MouseButton.LeftButton,
         Qt.KeyboardModifier.NoModifier,
         rect.center(),
     )
     QTest.qWait(10)
 
-    assert dialog._list.selectedItems() == []
+    assert dialog._tree.selectedItems() == []
 
 
 def test_clicking_checkbox_still_toggles(
@@ -145,17 +231,17 @@ def test_clicking_checkbox_still_toggles(
     store: SearchConfigStore,
 ) -> None:
     item = find_item(dialog, "Gamma")
-    rect = dialog._list.visualItemRect(item)
+    rect = dialog._tree.visualItemRect(item)
 
     QTest.mouseClick(
-        dialog._list.viewport(),
+        dialog._tree.viewport(),
         Qt.MouseButton.LeftButton,
         Qt.KeyboardModifier.NoModifier,
         QPoint(rect.left() + 3, rect.center().y()),
     )
     QTest.qWait(10)
 
-    assert item.checkState() == Qt.CheckState.Unchecked
+    assert item.checkState(0) == Qt.CheckState.Unchecked
     assert store.is_visible(ENTRIES[2].path) is False
 
 

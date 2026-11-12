@@ -32,6 +32,7 @@ def _is_under(path: str, root: str) -> bool:
 class SearchRecord:
     weight: int = 0
     visible: bool = True
+    alias: str = ""
 
 
 class SearchConfigStore:
@@ -91,6 +92,7 @@ class SearchConfigStore:
 
             raw_weight = raw_value.get("weight", 0)
             raw_visible = raw_value.get("visible", True)
+            raw_alias = raw_value.get("alias", "")
             if (
                 isinstance(raw_weight, bool)
                 or not isinstance(raw_weight, int)
@@ -101,10 +103,14 @@ class SearchConfigStore:
             if not isinstance(raw_visible, bool):
                 self._warnings.append(f"visible 值无效，已忽略：{raw_key}")
                 continue
+            if not isinstance(raw_alias, str):
+                self._warnings.append(f"alias 值无效，已使用空别名：{raw_key}")
+                raw_alias = ""
 
             entries[weight_key(raw_key)] = SearchRecord(
                 weight=raw_weight,
                 visible=raw_visible,
+                alias=raw_alias.strip(),
             )
 
         self._entries = entries
@@ -117,6 +123,10 @@ class SearchConfigStore:
         record = self._entries.get(weight_key(path))
         return record.visible if record is not None else True
 
+    def alias_for(self, path: Path) -> str:
+        record = self._entries.get(weight_key(path))
+        return record.alias if record is not None else ""
+
     def snapshot(self) -> dict[str, SearchRecord]:
         return dict(self._entries)
 
@@ -126,11 +136,39 @@ class SearchConfigStore:
         self._entries[key] = SearchRecord(
             weight=current.weight + 1,
             visible=current.visible,
+            alias=current.alias,
         )
         return self._save()
 
     def set_visible(self, path: Path, visible: bool) -> bool:
         return self.set_visibility({weight_key(path): visible})
+
+    def set_alias(self, path: Path, alias: str) -> bool:
+        return self.set_aliases({weight_key(path): alias})
+
+    def set_aliases(self, changes: Mapping[str, str]) -> bool:
+        if not changes:
+            return True
+
+        normalized = {key: alias.strip() for key, alias in changes.items()}
+        previous = {key: self._entries.get(key) for key in normalized}
+        for key, alias in normalized.items():
+            current = self._entries.get(key, SearchRecord())
+            self._entries[key] = SearchRecord(
+                weight=current.weight,
+                visible=current.visible,
+                alias=alias,
+            )
+
+        if self._save():
+            return True
+
+        for key, record in previous.items():
+            if record is None:
+                self._entries.pop(key, None)
+            else:
+                self._entries[key] = record
+        return False
 
     def set_visibility(self, changes: Mapping[str, bool]) -> bool:
         if not changes:
@@ -142,6 +180,7 @@ class SearchConfigStore:
             self._entries[key] = SearchRecord(
                 weight=current.weight,
                 visible=visible,
+                alias=current.alias,
             )
 
         if self._save():
@@ -201,6 +240,7 @@ class SearchConfigStore:
                 key: {
                     "weight": record.weight,
                     "visible": record.visible,
+                    "alias": record.alias,
                 }
                 for key, record in self._entries.items()
             },

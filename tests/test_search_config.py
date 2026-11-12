@@ -21,6 +21,7 @@ def test_missing_file_has_empty_entries(tmp_path: Path) -> None:
     assert store.snapshot() == {}
     assert store.weight_for(tmp_path / "app.lnk") == 0
     assert store.is_visible(tmp_path / "app.lnk") is True
+    assert store.alias_for(tmp_path / "app.lnk") == ""
     assert store.warnings == ()
 
 
@@ -39,6 +40,7 @@ def test_record_launch_increments_and_persists(tmp_path: Path) -> None:
     assert raw["entries"][weight_key(path)] == {
         "weight": 2,
         "visible": True,
+        "alias": "",
     }
 
     reloaded = make_store(tmp_path)
@@ -82,6 +84,105 @@ def test_set_visible_preserves_weight_and_persists(tmp_path: Path) -> None:
     reloaded = make_store(tmp_path)
     assert reloaded.weight_for(path) == 2
     assert reloaded.is_visible(path) is False
+
+
+def test_set_alias_persists_and_preserves_other_fields(tmp_path: Path) -> None:
+    store = make_store(tmp_path)
+    path = tmp_path / "app.lnk"
+    path.write_text("", encoding="utf-8")
+    store.record_launch(path)
+    store.record_launch(path)
+    store.set_visible(path, False)
+
+    assert store.set_alias(path, "  vs code  ") is True
+    assert store.alias_for(path) == "vs code"
+    assert store.weight_for(path) == 2
+    assert store.is_visible(path) is False
+
+    raw = json.loads(store.path.read_text(encoding="utf-8"))
+    assert raw["entries"][weight_key(path)]["alias"] == "vs code"
+
+    reloaded = make_store(tmp_path)
+    assert reloaded.alias_for(path) == "vs code"
+    assert reloaded.weight_for(path) == 2
+    assert reloaded.is_visible(path) is False
+
+
+def test_record_launch_preserves_alias(tmp_path: Path) -> None:
+    store = make_store(tmp_path)
+    path = tmp_path / "app.lnk"
+    path.write_text("", encoding="utf-8")
+    store.set_alias(path, "launcher")
+
+    assert store.record_launch(path) is True
+    assert store.alias_for(path) == "launcher"
+    assert store.weight_for(path) == 1
+
+
+def test_set_aliases_updates_multiple_entries(tmp_path: Path) -> None:
+    store = make_store(tmp_path)
+    first = tmp_path / "first.lnk"
+    second = tmp_path / "second.lnk"
+    first.write_text("", encoding="utf-8")
+    second.write_text("", encoding="utf-8")
+
+    assert store.set_aliases(
+        {
+            weight_key(first): "one",
+            weight_key(second): "two",
+        }
+    ) is True
+    assert store.alias_for(first) == "one"
+    assert store.alias_for(second) == "two"
+
+    reloaded = make_store(tmp_path)
+    assert reloaded.alias_for(first) == "one"
+    assert reloaded.alias_for(second) == "two"
+
+
+def test_set_alias_rolls_back_on_save_failure(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    store = make_store(tmp_path)
+    path = tmp_path / "app.lnk"
+    path.write_text("", encoding="utf-8")
+    store.set_alias(path, "old")
+
+    def fail(*args, **kwargs):
+        raise OSError("boom")
+
+    monkeypatch.setattr(config_module.os, "replace", fail)
+
+    assert store.set_alias(path, "new") is False
+    assert store.alias_for(path) == "old"
+    assert store.warnings
+    assert list(tmp_path.glob("*.tmp")) == []
+
+
+def test_invalid_alias_falls_back_to_empty(tmp_path: Path) -> None:
+    config_path = tmp_path / "search-config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "entries": {
+                    "C:/Apps/App.lnk": {
+                        "weight": 3,
+                        "visible": True,
+                        "alias": 5,
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    store = SearchConfigStore(config_path)
+    store.load()
+
+    record = store.snapshot()[weight_key(Path("C:/Apps/App.lnk"))]
+    assert record == SearchRecord(3, True)
+    assert store.warnings
 
 
 def test_set_visibility_updates_multiple_entries(tmp_path: Path) -> None:
@@ -240,6 +341,7 @@ def test_sync_adds_all_discovered_entries(tmp_path: Path) -> None:
     assert raw["entries"][weight_key(first)] == {
         "weight": 0,
         "visible": True,
+        "alias": "",
     }
 
 
@@ -252,7 +354,11 @@ def test_sync_preserves_existing_records(tmp_path: Path) -> None:
             {
                 "version": 2,
                 "entries": {
-                    weight_key(path): {"weight": 5, "visible": False},
+                    weight_key(path): {
+                        "weight": 5,
+                        "visible": False,
+                        "alias": "kept",
+                    },
                 },
             }
         ),
@@ -262,7 +368,7 @@ def test_sync_preserves_existing_records(tmp_path: Path) -> None:
     store.load()
 
     assert store.sync_entries([path], [tmp_path]) is False
-    assert store.snapshot()[weight_key(path)] == SearchRecord(5, False)
+    assert store.snapshot()[weight_key(path)] == SearchRecord(5, False, "kept")
 
 
 def test_sync_removes_deleted_lnk_records(tmp_path: Path) -> None:

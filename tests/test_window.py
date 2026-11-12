@@ -162,6 +162,21 @@ def test_hidden_entries_are_not_searchable(window) -> None:
     assert window._status_label.text() == "无匹配结果"
 
 
+def test_alias_is_searchable(window) -> None:
+    window.set_search_config(
+        {weight_key(ENTRIES[1].path): SearchRecord(alias="别名")}
+    )
+    window.search_input.setText("别名")
+    QTest.qWait(10)
+
+    names = [
+        window._result_list.item(index).text()
+        for index in range(window._result_list.count())
+    ]
+
+    assert names == ["Beta"]
+
+
 def test_all_hidden_entries_show_status(window) -> None:
     window.set_search_config(
         {
